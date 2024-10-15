@@ -1,5 +1,5 @@
 use crossterm::{
-    cursor::{self},
+    cursor::{self, SetCursorStyle},
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     terminal::{Clear, ClearType, SetSize},
 };
@@ -16,6 +16,7 @@ use crossterm::{
 enum Mode {
     Normal,
     Insert,
+    Command,
 }
 
 pub struct Editor {
@@ -40,6 +41,7 @@ impl Editor {
         execute!(
             &stdout,
             cursor::Hide,
+            SetCursorStyle::BlinkingBlock,
             EnterAlternateScreen,
             Clear(ClearType::All),
             cursor::MoveTo(0, 0),
@@ -96,6 +98,7 @@ impl Editor {
                     }) => match self.mode {
                         Mode::Normal => self.handle_normal_press(code)?,
                         Mode::Insert => self.handle_insert_press(code)?,
+                        Mode::Command => todo!(),
                     },
                     _ => continue,
                 }
@@ -107,20 +110,18 @@ impl Editor {
     fn handle_normal_press(&mut self, code: KeyCode) -> io::Result<()> {
         let mut stdout = io::stdout();
         match code {
-            KeyCode::Char('h') => {
+            KeyCode::Char('h') => execute!(stdout, cursor::MoveLeft(1))?,
+            KeyCode::Char('l') => execute!(stdout, cursor::MoveRight(1))?,
+            KeyCode::Char('k') => execute!(stdout, cursor::MoveUp(1))?,
+            KeyCode::Char('j') => execute!(stdout, cursor::MoveDown(1))?,
+            KeyCode::Char('i') => {
                 execute!(stdout, cursor::MoveLeft(1))?;
+                self.change_mode(Mode::Insert)?;
             }
-            KeyCode::Char('l') => {
+            KeyCode::Char('a') => {
                 execute!(stdout, cursor::MoveRight(1))?;
+                self.change_mode(Mode::Insert)?;
             }
-            KeyCode::Char('k') => {
-                execute!(stdout, cursor::MoveUp(1))?;
-            }
-            KeyCode::Char('j') => {
-                execute!(stdout, cursor::MoveDown(1))?;
-            }
-            KeyCode::Char('i') => self.mode = Mode::Insert,
-            KeyCode::Char('a') => self.mode = Mode::Insert,
             _ => {}
         }
         Ok(())
@@ -129,12 +130,22 @@ impl Editor {
     fn handle_insert_press(&mut self, code: KeyCode) -> io::Result<()> {
         let mut stdout = io::stdout();
         match code {
-            KeyCode::Esc => self.mode = Mode::Normal,
+            KeyCode::Esc => self.change_mode(Mode::Normal)?,
             _ => {
                 write!(stdout, "{}", code)?;
                 stdout.flush()?;
             }
         };
+        Ok(())
+    }
+    fn change_mode(&mut self, mode: Mode) -> io::Result<()> {
+        let mut stdout = io::stdout();
+        match mode {
+            Mode::Normal => execute!(stdout, SetCursorStyle::BlinkingBlock)?,
+            Mode::Insert => execute!(stdout, SetCursorStyle::BlinkingBar)?,
+            Mode::Command => todo!(),
+        }
+        self.mode = mode;
         Ok(())
     }
 }
