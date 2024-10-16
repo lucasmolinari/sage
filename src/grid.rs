@@ -27,7 +27,21 @@ impl Grid {
 
     pub fn set(&mut self, p: Point, c: char) {
         let index = (p.1 * self.width + p.0) as usize;
+        if self.chars[index] != ' ' && self.chars[index] != '~' && self.chars[index] != ':' {
+            self.shift_row(p.1, index);
+        }
         self.chars[index] = c;
+    }
+    fn shift_row(&mut self, row: usize, start: usize) {
+        let end = row * self.width + self.width;
+        for i in (start..end - 1).rev() {
+            let is_last_row = row + 1 >= self.height;
+            if !is_last_row && i == end - 1 {
+                self.set((0, row + 1), self.chars[i])
+            } else {
+                self.chars[i + 1] = self.chars[i];
+            }
+        }
     }
 
     pub fn clear_row(&mut self, row: usize) {

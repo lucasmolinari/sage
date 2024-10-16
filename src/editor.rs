@@ -170,7 +170,6 @@ impl Editor {
                 }
             }
             KeyCode::Char('i') => {
-                execute!(stdout, cursor::MoveLeft(1))?;
                 self.change_mode(Mode::Insert)?;
             }
             KeyCode::Char('a') => {
@@ -192,7 +191,12 @@ impl Editor {
             KeyCode::Char(c) => {
                 let (x, y) = cursor::position()?;
                 self.grid.set((x as usize, y as usize), c);
-                execute!(stdout, cursor::MoveRight(1))?;
+                let is_last_row = (y + 1) as usize >= self.grid.height;
+                if !is_last_row && (x + 1) as usize >= self.grid.width {
+                    execute!(stdout, cursor::MoveTo(1, y + 1))?;
+                } else {
+                    execute!(stdout, cursor::MoveRight(1))?;
+                };
             }
             _ => {}
         };
