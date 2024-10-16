@@ -6,7 +6,6 @@ use crossterm::{
 use std::{
     io::{self, BufWriter, Write},
     time::Duration,
-    usize,
 };
 
 use crossterm::{
@@ -14,53 +13,13 @@ use crossterm::{
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
+use crate::grid::{Grid, Point};
+
 #[derive(PartialEq)]
 enum Mode {
     Normal,
     Insert,
     Command,
-}
-
-type Point = (u16, u16);
-struct Grid {
-    chars: Vec<char>,
-    width: u16,
-    height: u16,
-}
-impl Grid {
-    fn new(width: u16, height: u16) -> Self {
-        let size = (width * height) as usize;
-
-        let mut chars = vec![' '; size];
-        for y in 0..height {
-            let index = (y * width) as usize;
-            chars[index] = '~';
-        }
-        Self {
-            chars,
-            width,
-            height,
-        }
-    }
-
-    fn get(&self, p: Point) -> &char {
-        let index = (p.1 * self.width + p.0) as usize;
-        &self.chars[index]
-    }
-
-    fn set(&mut self, p: Point, c: char) {
-        let index = (p.1 * self.width + p.0) as usize;
-        self.chars[index] = c;
-    }
-
-    fn clear_row(&mut self, row: u16) {
-        if row < self.height {
-            for x in 0..self.width {
-                let c = if x == 0 { '~' } else { ' ' };
-                self.set((x, row), c);
-            }
-        }
-    }
 }
 
 pub struct Editor {
