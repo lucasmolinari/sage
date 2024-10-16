@@ -14,6 +14,7 @@ use crossterm::{
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
+#[derive(PartialEq)]
 enum Mode {
     Normal,
     Insert,
@@ -51,12 +52,23 @@ impl Grid {
         let index = (p.1 * self.width + p.0) as usize;
         self.chars[index] = c;
     }
+
+    fn clear_row(&mut self, row: u16) {
+        if row < self.height {
+            for x in 0..self.width {
+                let c = if x == 0 { '~' } else { ' ' };
+                self.set((x, row), c);
+            }
+        }
+    }
 }
 
 pub struct Editor {
     orig_size: Point,
     size: Point,
     mode: Mode,
+    command: String,
+    last_c_pos: Point,
     grid: Grid,
 }
 impl Editor {
@@ -66,6 +78,8 @@ impl Editor {
             orig_size,
             size: orig_size,
             mode: Mode::Normal,
+            command: String::new(),
+            last_c_pos: (1, 1),
             grid: Grid::new(orig_size.0, orig_size.1),
         })
     }
@@ -104,7 +118,7 @@ impl Editor {
             }
         }
         buffer.flush()?;
-        execute!(&stdout, cursor::MoveTo(c_pos.0 + 1, c_pos.1), cursor::Show)?;
+        execute!(&stdout, cursor::MoveTo(c_pos.0, c_pos.1), cursor::Show)?;
         Ok(())
     }
 
@@ -138,11 +152,19 @@ impl Editor {
                         kind: KeyEventKind::Press,
                         code,
                         ..
-                    }) => match self.mode {
-                        Mode::Normal => self.handle_normal_press(code)?,
-                        Mode::Insert => self.handle_insert_press(code)?,
-                        Mode::Command => todo!(),
-                    },
+                    }) => {
+                        match self.mode {
+                            Mode::Normal => self.handle_normal_press(code)?,
+                            Mode::Insert => self.handle_insert_press(code)?,
+                            Mode::Command => {
+                                let q = self.handle_command_press(code)?;
+                                if q {
+                                    break;
+                                }
+                            }
+                        }
+                        self.render_screen()?;
+                    }
                     _ => continue,
                 }
             }
@@ -182,29 +204,82 @@ impl Editor {
                 execute!(stdout, cursor::MoveRight(1))?;
                 self.change_mode(Mode::Insert)?;
             }
+            KeyCode::Char(':') => {
+                self.change_mode(Mode::Command)?;
+            }
             _ => {}
         }
         Ok(())
     }
 
     fn handle_insert_press(&mut self, code: KeyCode) -> io::Result<()> {
+        let mut stdout = io::stdout();
         match code {
             KeyCode::Esc => self.change_mode(Mode::Normal)?,
             KeyCode::Char(c) => {
                 let c_pos = cursor::position()?;
                 self.grid.set(c_pos, c);
-                self.render_screen()?;
+                execute!(stdout, cursor::MoveRight(1))?;
             }
             _ => {}
         };
         Ok(())
     }
+
+    fn handle_command_press(&mut self, code: KeyCode) -> io::Result<bool> {
+        let mut stdout = io::stdout();
+        match code {
+            KeyCode::Enter => {
+                let q = self.exec_cmd();
+                self.change_mode(Mode::Normal)?;
+                return q;
+            }
+            KeyCode::Esc => self.change_mode(Mode::Normal)?,
+            KeyCode::Char(c) => {
+                let (x, y) = cursor::position()?;
+                self.command.push(c);
+                self.grid.set((x, y), c);
+                execute!(stdout, cursor::MoveRight(1))?;
+            }
+            _ => {}
+        }
+        Ok(false)
+    }
+
+    fn exec_cmd(&self) -> io::Result<bool> {
+        match self.command.as_str() {
+            "w" => todo!(),
+            "q" => return Ok(true),
+            "wq" => todo!(),
+            _ => {}
+        };
+        Ok(false)
+    }
+
     fn change_mode(&mut self, mode: Mode) -> io::Result<()> {
         let mut stdout = io::stdout();
+
+        if self.mode == Mode::Command {
+            self.command = "".to_string();
+
+            self.grid.clear_row(self.size.1 - 1);
+
+            let (x, y) = self.last_c_pos;
+            execute!(stdout, cursor::MoveTo(x, y))?;
+        }
+
         match mode {
             Mode::Normal => execute!(stdout, SetCursorStyle::BlinkingBlock)?,
             Mode::Insert => execute!(stdout, SetCursorStyle::BlinkingBar)?,
-            Mode::Command => todo!(),
+            Mode::Command => {
+                self.last_c_pos = cursor::position()?;
+                self.grid.set((0, self.size.1 - 1), ':');
+                execute!(
+                    stdout,
+                    cursor::MoveTo(1, self.size.1 - 1),
+                    SetCursorStyle::BlinkingBar
+                )?
+            }
         }
         self.mode = mode;
         Ok(())
