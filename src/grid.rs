@@ -1,12 +1,12 @@
-pub type Point = (u16, u16);
+pub type Point = (usize, usize);
 pub struct Grid {
-    pub width: u16,
-    pub height: u16,
+    pub width: usize,
+    pub height: usize,
     chars: Vec<char>,
 }
 impl Grid {
-    pub fn new(width: u16, height: u16) -> Self {
-        let size = (width * height) as usize;
+    pub fn new(width: usize, height: usize) -> Self {
+        let size = width * height;
 
         let mut chars = vec![' '; size];
         for y in 0..height {
@@ -30,7 +30,7 @@ impl Grid {
         self.chars[index] = c;
     }
 
-    pub fn clear_row(&mut self, row: u16) {
+    pub fn clear_row(&mut self, row: usize) {
         if row < self.height {
             for x in 0..self.width {
                 let c = if x == 0 { '~' } else { ' ' };

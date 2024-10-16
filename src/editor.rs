@@ -4,7 +4,9 @@ use crossterm::{
     terminal::{Clear, ClearType, SetSize},
 };
 use std::{
-    io::{self, BufWriter, Write},
+    fs::File,
+    io::{self, BufRead, BufReader, BufWriter, Write},
+    path::PathBuf,
     time::Duration,
 };
 
@@ -13,7 +15,7 @@ use crossterm::{
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-use crate::grid::{Grid, Point};
+use crate::grid::Grid;
 
 #[derive(PartialEq)]
 enum Mode {
@@ -23,11 +25,11 @@ enum Mode {
 }
 
 pub struct Editor {
-    orig_size: Point,
-    size: Point,
+    orig_size: (u16, u16),
+    size: (u16, u16),
     mode: Mode,
     command: String,
-    last_c_pos: Point,
+    last_c_pos: (u16, u16),
     grid: Grid,
 }
 impl Editor {
@@ -39,7 +41,7 @@ impl Editor {
             mode: Mode::Normal,
             command: String::new(),
             last_c_pos: (1, 1),
-            grid: Grid::new(orig_size.0, orig_size.1),
+            grid: Grid::new(orig_size.0 as usize, orig_size.1 as usize),
         })
     }
     pub fn init(&mut self) -> io::Result<()> {
@@ -54,6 +56,18 @@ impl Editor {
 
         self.render_screen()?;
         execute!(stdout, cursor::MoveTo(1, 0))?;
+        Ok(())
+    }
+
+    pub fn open_file(&mut self, path: PathBuf) -> io::Result<()> {
+        let file = File::open(path)?;
+        let buffer = BufReader::new(file);
+        for (y, l) in buffer.lines().enumerate() {
+            let l = l?;
+            for (x, c) in l.chars().enumerate() {
+                self.grid.set((x, y), c)
+            }
+        }
         Ok(())
     }
 
@@ -176,8 +190,8 @@ impl Editor {
         match code {
             KeyCode::Esc => self.change_mode(Mode::Normal)?,
             KeyCode::Char(c) => {
-                let c_pos = cursor::position()?;
-                self.grid.set(c_pos, c);
+                let (x, y) = cursor::position()?;
+                self.grid.set((x as usize, y as usize), c);
                 execute!(stdout, cursor::MoveRight(1))?;
             }
             _ => {}
@@ -197,7 +211,7 @@ impl Editor {
             KeyCode::Char(c) => {
                 let (x, y) = cursor::position()?;
                 self.command.push(c);
-                self.grid.set((x, y), c);
+                self.grid.set((x as usize, y as usize), c);
                 execute!(stdout, cursor::MoveRight(1))?;
             }
             _ => {}
@@ -221,7 +235,7 @@ impl Editor {
         if self.mode == Mode::Command {
             self.command = "".to_string();
 
-            self.grid.clear_row(self.size.1 - 1);
+            self.grid.clear_row((self.size.1 - 1) as usize);
 
             let (x, y) = self.last_c_pos;
             execute!(stdout, cursor::MoveTo(x, y))?;
@@ -232,7 +246,7 @@ impl Editor {
             Mode::Insert => execute!(stdout, SetCursorStyle::BlinkingBar)?,
             Mode::Command => {
                 self.last_c_pos = cursor::position()?;
-                self.grid.set((0, self.size.1 - 1), ':');
+                self.grid.set((0, (self.size.1 - 1) as usize), ':');
                 execute!(
                     stdout,
                     cursor::MoveTo(1, self.size.1 - 1),
