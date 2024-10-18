@@ -65,7 +65,7 @@ impl Editor {
         for (y, l) in buffer.lines().enumerate() {
             let l = l?;
             for (x, c) in l.chars().enumerate() {
-                self.grid.set(Point { x, y }, c)
+                self.grid.set(&Point { x, y }, c)
             }
         }
         Ok(())
@@ -86,7 +86,7 @@ impl Editor {
         let mut buffer = BufWriter::new(&stdout);
         for y in 0..self.grid.height {
             for x in 0..self.grid.width {
-                let char = self.grid.get(Point { x, y });
+                let char = self.grid.get(&Point { x, y });
                 buffer.write(char.to_string().as_bytes())?;
             }
         }
@@ -159,6 +159,14 @@ impl Editor {
                 execute!(stdout, cursor::MoveRight(1))?;
                 self.change_mode(Mode::Insert)?;
             }
+
+            KeyCode::Char('x') => {
+                let (x, y) = cursor::position()?;
+                self.grid.clear_char(&Point {
+                    x: x as usize,
+                    y: y as usize,
+                });
+            }
             KeyCode::Char(':') => {
                 self.change_mode(Mode::Command)?;
             }
@@ -174,7 +182,7 @@ impl Editor {
             KeyCode::Char(c) => {
                 let (x, y) = cursor::position()?;
                 self.grid.set(
-                    Point {
+                    &Point {
                         x: x as usize,
                         y: y as usize,
                     },
@@ -184,8 +192,24 @@ impl Editor {
                 if !is_last_row && (x + 1) as usize >= self.grid.width {
                     execute!(stdout, cursor::MoveTo(0, y + 1))?;
                 } else {
-                    execute!(stdout, cursor::MoveRight(0))?;
+                    execute!(stdout, cursor::MoveRight(1))?;
                 };
+            }
+            KeyCode::Backspace => {
+                let (x, y) = cursor::position()?;
+                let mut p = Point {
+                    x: x as usize,
+                    y: y as usize,
+                };
+                if x > 0 {
+                    p.x = p.x - 1;
+                }
+                self.grid.clear_char(&p);
+                if x <= 0 && y > 0 {
+                    execute!(stdout, cursor::MoveTo(1 + self.grid.width as u16, y - 1))?;
+                } else {
+                    execute!(stdout, cursor::MoveLeft(1))?;
+                }
             }
             _ => {}
         };
@@ -205,7 +229,7 @@ impl Editor {
                 let (x, y) = cursor::position()?;
                 self.command.push(c);
                 self.grid.set(
-                    Point {
+                    &Point {
                         x: x as usize,
                         y: y as usize,
                     },
@@ -246,7 +270,7 @@ impl Editor {
             Mode::Command => {
                 self.last_c_pos = cursor::position()?;
                 self.grid.set(
-                    Point {
+                    &Point {
                         x: 0,
                         y: self.size.1 as usize - 1,
                     },
