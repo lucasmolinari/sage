@@ -15,7 +15,7 @@ use crossterm::{
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-use crate::grid::Grid;
+use crate::grid::{Grid, Point};
 
 #[derive(PartialEq)]
 enum Mode {
@@ -40,7 +40,7 @@ impl Editor {
             size: orig_size,
             mode: Mode::Normal,
             command: String::new(),
-            last_c_pos: (1, 1),
+            last_c_pos: (0, 0),
             grid: Grid::new(orig_size.0 as usize, orig_size.1 as usize),
         })
     }
@@ -55,7 +55,7 @@ impl Editor {
         )?;
 
         self.render_screen()?;
-        execute!(stdout, cursor::MoveTo(1, 0))?;
+        execute!(stdout, cursor::MoveTo(0, 0))?;
         Ok(())
     }
 
@@ -65,7 +65,7 @@ impl Editor {
         for (y, l) in buffer.lines().enumerate() {
             let l = l?;
             for (x, c) in l.chars().enumerate() {
-                self.grid.set((x, y), c)
+                self.grid.set(Point { x, y }, c)
             }
         }
         Ok(())
@@ -86,7 +86,7 @@ impl Editor {
         let mut buffer = BufWriter::new(&stdout);
         for y in 0..self.grid.height {
             for x in 0..self.grid.width {
-                let char = self.grid.get((x, y));
+                let char = self.grid.get(Point { x, y });
                 buffer.write(char.to_string().as_bytes())?;
             }
         }
@@ -147,28 +147,11 @@ impl Editor {
 
     fn handle_normal_press(&mut self, code: KeyCode) -> io::Result<()> {
         let mut stdout = io::stdout();
-        let c_pos = cursor::position()?;
         match code {
-            KeyCode::Char('h') => {
-                if c_pos.0 != 1 {
-                    execute!(stdout, cursor::MoveLeft(1))?
-                }
-            }
-            KeyCode::Char('l') => {
-                if c_pos.0 != self.size.0 {
-                    execute!(stdout, cursor::MoveRight(1))?
-                }
-            }
-            KeyCode::Char('k') => {
-                if c_pos.1 != 0 {
-                    execute!(stdout, cursor::MoveUp(1))?
-                }
-            }
-            KeyCode::Char('j') => {
-                if c_pos.1 != self.size.1 {
-                    execute!(stdout, cursor::MoveDown(1))?
-                }
-            }
+            KeyCode::Char('h') => execute!(stdout, cursor::MoveLeft(1))?,
+            KeyCode::Char('l') => execute!(stdout, cursor::MoveRight(1))?,
+            KeyCode::Char('k') => execute!(stdout, cursor::MoveUp(1))?,
+            KeyCode::Char('j') => execute!(stdout, cursor::MoveDown(1))?,
             KeyCode::Char('i') => {
                 self.change_mode(Mode::Insert)?;
             }
@@ -190,12 +173,18 @@ impl Editor {
             KeyCode::Esc => self.change_mode(Mode::Normal)?,
             KeyCode::Char(c) => {
                 let (x, y) = cursor::position()?;
-                self.grid.set((x as usize, y as usize), c);
+                self.grid.set(
+                    Point {
+                        x: x as usize,
+                        y: y as usize,
+                    },
+                    c,
+                );
                 let is_last_row = (y + 1) as usize >= self.grid.height;
                 if !is_last_row && (x + 1) as usize >= self.grid.width {
-                    execute!(stdout, cursor::MoveTo(1, y + 1))?;
+                    execute!(stdout, cursor::MoveTo(0, y + 1))?;
                 } else {
-                    execute!(stdout, cursor::MoveRight(1))?;
+                    execute!(stdout, cursor::MoveRight(0))?;
                 };
             }
             _ => {}
@@ -215,7 +204,13 @@ impl Editor {
             KeyCode::Char(c) => {
                 let (x, y) = cursor::position()?;
                 self.command.push(c);
-                self.grid.set((x as usize, y as usize), c);
+                self.grid.set(
+                    Point {
+                        x: x as usize,
+                        y: y as usize,
+                    },
+                    c,
+                );
                 execute!(stdout, cursor::MoveRight(1))?;
             }
             _ => {}
@@ -250,7 +245,13 @@ impl Editor {
             Mode::Insert => execute!(stdout, SetCursorStyle::BlinkingBar)?,
             Mode::Command => {
                 self.last_c_pos = cursor::position()?;
-                self.grid.set((0, (self.size.1 - 1) as usize), ':');
+                self.grid.set(
+                    Point {
+                        x: 0,
+                        y: self.size.1 as usize - 1,
+                    },
+                    ':',
+                );
                 execute!(
                     stdout,
                     cursor::MoveTo(1, self.size.1 - 1),

@@ -1,4 +1,7 @@
-pub type Point = (usize, usize);
+pub struct Point {
+    pub x: usize,
+    pub y: usize,
+}
 pub struct Grid {
     pub width: usize,
     pub height: usize,
@@ -11,7 +14,9 @@ impl Grid {
         let mut chars = vec![' '; size];
         for y in 0..height {
             let index = (y * width) as usize;
-            chars[index] = '~';
+            if index != 0 {
+                chars[index] = '~';
+            }
         }
         Self {
             chars,
@@ -20,35 +25,42 @@ impl Grid {
         }
     }
 
+    pub fn point_index(&self, p: &Point) -> usize {
+        p.y * self.width + p.x
+    }
+
     pub fn get(&self, p: Point) -> &char {
-        let index = (p.1 * self.width + p.0) as usize;
+        let index = self.point_index(&p);
         &self.chars[index]
     }
 
     pub fn set(&mut self, p: Point, c: char) {
-        let index = (p.1 * self.width + p.0) as usize;
+        let index = self.point_index(&p);
         if self.chars[index] != ' ' && self.chars[index] != '~' && self.chars[index] != ':' {
-            self.shift_row(p.1, index);
+            self.shift_row(p);
         }
         self.chars[index] = c;
     }
-    fn shift_row(&mut self, row: usize, start: usize) {
-        let end = row * self.width + self.width;
-        for i in (start..end - 1).rev() {
-            let is_last_row = row + 1 >= self.height;
-            if !is_last_row && i == end - 1 {
-                self.set((0, row + 1), self.chars[i])
-            } else {
-                self.chars[i + 1] = self.chars[i];
-            }
+
+    fn shift_row(&mut self, p: Point) {
+        let start = self.point_index(&p);
+        let end = (p.y + 1) * self.width - 1;
+        let last_char = self.chars[end];
+
+        for i in (start..end).rev() {
+            self.chars[i + 1] = self.chars[i];
+        }
+
+        if p.y + 1 < self.height && last_char != ' ' {
+            self.set(Point { x: 0, y: p.y + 1 }, last_char);
         }
     }
 
-    pub fn clear_row(&mut self, row: usize) {
-        if row < self.height {
+    pub fn clear_row(&mut self, y: usize) {
+        if y < self.height {
             for x in 0..self.width {
                 let c = if x == 0 { '~' } else { ' ' };
-                self.set((x, row), c);
+                self.set(Point { x, y }, c);
             }
         }
     }
