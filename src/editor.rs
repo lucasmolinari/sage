@@ -1,47 +1,71 @@
-use crossterm::{
-    cursor::{self, SetCursorStyle},
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
-    terminal::{Clear, ClearType, SetSize},
-};
 use std::{
-    fs::File,
-    io::{self, BufRead, BufReader, BufWriter, Write},
-    path::PathBuf,
+    env, fs,
+    io::{self},
+    path::{Path, PathBuf},
     time::Duration,
 };
 
 use crossterm::{
+    cursor::{self, SetCursorStyle},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
-    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{self, EnterAlternateScreen},
 };
 
-use crate::grid::{Grid, Point};
+use crate::out;
 
-#[derive(PartialEq)]
+#[allow(dead_code)]
 enum Mode {
     Normal,
     Insert,
     Command,
 }
 
+pub struct EditorRows {
+    rows: Vec<Box<str>>,
+}
+impl EditorRows {
+    fn new() -> io::Result<Self> {
+        let args: Vec<String> = env::args().collect();
+
+        match args.get(1) {
+            Some(p) => {
+                let path = Path::new(p).canonicalize()?;
+                Ok(Self::from_file(&path)?)
+            }
+            None => Ok(Self {
+                rows: vec![" ".into()],
+            }),
+        }
+    }
+
+    fn from_file(path: &PathBuf) -> io::Result<Self> {
+        let contents = fs::read_to_string(path)?;
+        Ok(Self {
+            rows: contents.lines().map(|l| l.into()).collect(),
+        })
+    }
+
+    pub fn get(&self, i: usize) -> &str {
+        &self.rows[i]
+    }
+
+    pub fn num_rows(&self) -> usize {
+        self.rows.len()
+    }
+}
+
 pub struct Editor {
-    orig_size: (u16, u16),
-    size: (u16, u16),
     mode: Mode,
-    command: String,
-    last_c_pos: (u16, u16),
-    grid: Grid,
+    output: out::Output,
+    e_rows: EditorRows,
 }
 impl Editor {
     pub fn new() -> io::Result<Self> {
-        let orig_size = terminal::size()?;
-        Ok(Editor {
-            orig_size,
-            size: orig_size,
+        Ok(Self {
             mode: Mode::Normal,
-            command: String::new(),
-            last_c_pos: (0, 0),
-            grid: Grid::new(orig_size.0 as usize, orig_size.1 as usize),
+            output: out::Output::new()?,
+            e_rows: EditorRows::new()?,
         })
     }
     pub fn init(&mut self) -> io::Result<()> {
@@ -51,69 +75,14 @@ impl Editor {
             stdout,
             SetCursorStyle::BlinkingBlock,
             EnterAlternateScreen,
-            cursor::MoveTo(0, 0),
+            cursor::MoveTo(0, 0)
         )?;
-
-        self.render_screen()?;
-        execute!(stdout, cursor::MoveTo(0, 0))?;
+        self.output.render_screen(&self.e_rows)?;
         Ok(())
     }
-
-    pub fn open_file(&mut self, path: PathBuf) -> io::Result<()> {
-        let file = File::open(path)?;
-        let buffer = BufReader::new(file);
-        for (y, l) in buffer.lines().enumerate() {
-            let l = l?;
-            for (x, c) in l.chars().enumerate() {
-                self.grid.set(&Point { x, y }, c)
-            }
-        }
-        Ok(())
-    }
-
-    fn refresh_screen(&self) -> io::Result<()> {
-        let mut stdout = io::stdout();
-        execute!(stdout, Clear(ClearType::All))?;
-        Ok(())
-    }
-
-    fn render_screen(&self) -> io::Result<()> {
-        let stdout = io::stdout();
-
-        let c_pos = cursor::position()?;
-        execute!(&stdout, cursor::Hide, cursor::MoveTo(0, 0))?;
-
-        let mut buffer = BufWriter::new(&stdout);
-        for y in 0..self.grid.height {
-            for x in 0..self.grid.width {
-                let char = self.grid.get(&Point { x, y });
-                buffer.write(char.to_string().as_bytes())?;
-            }
-        }
-        buffer.flush()?;
-        execute!(&stdout, cursor::MoveTo(c_pos.0, c_pos.1), cursor::Show)?;
-        Ok(())
-    }
-
-    pub fn destroy(&self) -> io::Result<()> {
-        let mut stdout = io::stdout();
-        self.refresh_screen()?;
-        terminal::disable_raw_mode()?;
-
-        let (rows, cols) = self.orig_size;
-        execute!(
-            stdout,
-            LeaveAlternateScreen,
-            SetSize(rows, cols),
-            SetCursorStyle::DefaultUserShape
-        )?;
-
-        Ok(())
-    }
-
     pub fn poll(&mut self) -> io::Result<()> {
         loop {
-            if event::poll(Duration::from_millis(100))? {
+            if event::poll(Duration::from_millis(500))? {
                 let event = event::read()?;
                 match event {
                     Event::Key(KeyEvent {
@@ -128,15 +97,10 @@ impl Editor {
                     }) => {
                         match self.mode {
                             Mode::Normal => self.handle_normal_press(code)?,
-                            Mode::Insert => self.handle_insert_press(code)?,
-                            Mode::Command => {
-                                let q = self.handle_command_press(code)?;
-                                if q {
-                                    break;
-                                }
-                            }
+                            Mode::Insert => todo!(),
+                            Mode::Command => todo!(),
                         }
-                        self.render_screen()?;
+                        self.output.render_screen(&self.e_rows)?;
                     }
                     _ => continue,
                 }
@@ -146,144 +110,19 @@ impl Editor {
     }
 
     fn handle_normal_press(&mut self, code: KeyCode) -> io::Result<()> {
-        let mut stdout = io::stdout();
         match code {
-            KeyCode::Char('h') => execute!(stdout, cursor::MoveLeft(1))?,
-            KeyCode::Char('l') => execute!(stdout, cursor::MoveRight(1))?,
-            KeyCode::Char('k') => execute!(stdout, cursor::MoveUp(1))?,
-            KeyCode::Char('j') => execute!(stdout, cursor::MoveDown(1))?,
-            KeyCode::Char('i') => {
-                self.change_mode(Mode::Insert)?;
-            }
-            KeyCode::Char('a') => {
-                execute!(stdout, cursor::MoveRight(1))?;
-                self.change_mode(Mode::Insert)?;
-            }
-
-            KeyCode::Char('x') => {
-                let (x, y) = cursor::position()?;
-                self.grid.clear_char(&Point {
-                    x: x as usize,
-                    y: y as usize,
-                });
-            }
-            KeyCode::Char(':') => {
-                self.change_mode(Mode::Command)?;
+            KeyCode::Char(c @ ('k' | 'j' | 'h' | 'l')) => {
+                self.output.move_cursor(c, self.e_rows.num_rows())
             }
             _ => {}
         }
         Ok(())
     }
+}
 
-    fn handle_insert_press(&mut self, code: KeyCode) -> io::Result<()> {
-        let mut stdout = io::stdout();
-        match code {
-            KeyCode::Esc => self.change_mode(Mode::Normal)?,
-            KeyCode::Char(c) => {
-                let (x, y) = cursor::position()?;
-                self.grid.set(
-                    &Point {
-                        x: x as usize,
-                        y: y as usize,
-                    },
-                    c,
-                );
-                let is_last_row = (y + 1) as usize >= self.grid.height;
-                if !is_last_row && (x + 1) as usize >= self.grid.width {
-                    execute!(stdout, cursor::MoveTo(0, y + 1))?;
-                } else {
-                    execute!(stdout, cursor::MoveRight(1))?;
-                };
-            }
-            KeyCode::Backspace => {
-                let (x, y) = cursor::position()?;
-                let mut p = Point {
-                    x: x as usize,
-                    y: y as usize,
-                };
-                if x > 0 {
-                    p.x = p.x - 1;
-                }
-                self.grid.clear_char(&p);
-                if x <= 0 && y > 0 {
-                    execute!(stdout, cursor::MoveTo(1 + self.grid.width as u16, y - 1))?;
-                } else {
-                    execute!(stdout, cursor::MoveLeft(1))?;
-                }
-            }
-            _ => {}
-        };
-        Ok(())
-    }
-
-    fn handle_command_press(&mut self, code: KeyCode) -> io::Result<bool> {
-        let mut stdout = io::stdout();
-        match code {
-            KeyCode::Enter => {
-                let q = self.exec_cmd();
-                self.change_mode(Mode::Normal)?;
-                return q;
-            }
-            KeyCode::Esc => self.change_mode(Mode::Normal)?,
-            KeyCode::Char(c) => {
-                let (x, y) = cursor::position()?;
-                self.command.push(c);
-                self.grid.set(
-                    &Point {
-                        x: x as usize,
-                        y: y as usize,
-                    },
-                    c,
-                );
-                execute!(stdout, cursor::MoveRight(1))?;
-            }
-            _ => {}
-        }
-        Ok(false)
-    }
-
-    fn exec_cmd(&self) -> io::Result<bool> {
-        match self.command.as_str() {
-            "w" => todo!(),
-            "q" => return Ok(true),
-            "wq" => todo!(),
-            _ => {}
-        };
-        Ok(false)
-    }
-
-    fn change_mode(&mut self, mode: Mode) -> io::Result<()> {
-        let mut stdout = io::stdout();
-
-        if self.mode == Mode::Command {
-            self.command = "".to_string();
-
-            self.grid.clear_row((self.size.1 - 1) as usize);
-
-            let (x, y) = self.last_c_pos;
-            execute!(stdout, cursor::MoveTo(x, y))?;
-        }
-
-        match mode {
-            Mode::Normal => execute!(stdout, SetCursorStyle::BlinkingBlock)?,
-            Mode::Insert => execute!(stdout, SetCursorStyle::BlinkingBar)?,
-            Mode::Command => {
-                self.last_c_pos = cursor::position()?;
-                self.grid.set(
-                    &Point {
-                        x: 0,
-                        y: self.size.1 as usize - 1,
-                    },
-                    ':',
-                );
-                execute!(
-                    stdout,
-                    cursor::MoveTo(1, self.size.1 - 1),
-                    SetCursorStyle::BlinkingBar
-                )?
-            }
-        }
-        self.mode = mode;
-        Ok(())
+impl Drop for Editor {
+    fn drop(&mut self) {
+        terminal::disable_raw_mode().expect("Failed to disable raw mode");
+        self.output.clear_screen().expect("Failed to clear screen");
     }
 }
