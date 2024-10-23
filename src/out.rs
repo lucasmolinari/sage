@@ -11,6 +11,13 @@ use std::{
 
 use crate::{editor::EditorRows, TAB_SZ};
 
+pub enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
 pub struct Output {
     size: (usize, usize),
     c_ctrl: CursorController,
@@ -88,7 +95,7 @@ impl Output {
         );
         self.out.write(info_f.as_bytes())?;
 
-        let info_c = format!("{}:{}/{}", c_y, c_x, self.c_ctrl.rx);
+        let info_c = format!("{}:{}/{}", c_y + 1, c_x + 1, self.c_ctrl.rx + 1);
         let info_c_pos = self.size.0 - info_c.len();
         for i in info_f.len()..self.size.0 {
             if i >= info_c_pos {
@@ -103,8 +110,18 @@ impl Output {
         Ok(())
     }
 
-    pub fn move_cursor(&mut self, code: char, e_rows: &EditorRows) {
-        self.c_ctrl.mv(code, e_rows);
+    pub fn insert(&mut self, e_rows: &mut EditorRows, c: char) {
+        let (x, y) = (self.c_ctrl.cx, self.c_ctrl.cy);
+        e_rows.get_erow_mut(y).insert(x, c);
+        self.c_ctrl.cx += 1;
+    }
+
+    pub fn insert_erow(&mut self, e_rows: &mut EditorRows) {
+        e_rows.insert_erow(self.c_ctrl.cy + 1);
+    }
+
+    pub fn move_cursor(&mut self, dir: Direction, e_rows: &EditorRows) {
+        self.c_ctrl.mv(dir, e_rows);
     }
 }
 
@@ -128,17 +145,17 @@ impl CursorController {
         }
     }
 
-    fn mv(&mut self, code: char, e_rows: &EditorRows) {
+    fn mv(&mut self, dir: Direction, e_rows: &EditorRows) {
         let n_rows = e_rows.num_rows() - 1;
-        match code {
-            'k' => self.cy = self.cy.saturating_sub(1),
-            'h' => self.cx = self.cx.saturating_sub(1),
-            'j' => {
+        match dir {
+            Direction::Up => self.cy = self.cy.saturating_sub(1),
+            Direction::Left => self.cx = self.cx.saturating_sub(1),
+            Direction::Down => {
                 if self.cy < n_rows {
                     self.cy += 1;
                 }
             }
-            'l' => {
+            Direction::Right => {
                 let row = e_rows.get_raw(self.cy);
                 if self.cx < row.len().saturating_sub(1) {
                     self.cx += 1;
@@ -147,7 +164,6 @@ impl CursorController {
                     }
                 }
             }
-            _ => unimplemented!(),
         };
         let r_len = e_rows.get_raw(self.cy).len().saturating_sub(1);
         self.cx = cmp::min(self.cx, r_len);
