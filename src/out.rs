@@ -36,7 +36,7 @@ impl Output {
             size,
             c_ctrl: CursorController::new(size),
             out: BufWriter::new(io::stdout()),
-            msg: Some(StatusMessage::new("Sage Text", MessageLevel::Normal)),
+            msg: None,
             cmd: None,
             dirty: 0,
         })
@@ -156,14 +156,17 @@ impl Output {
     }
 
     fn render_command(&mut self) -> io::Result<()> {
+        queue!(
+            self.out,
+            Clear(ClearType::CurrentLine),
+            cursor::MoveTo(0, (self.size.1 + 2) as u16)
+        )?;
+        self.out.write(b":")?;
+
         if let Some(cmd) = &self.cmd {
-            queue!(
-                self.out,
-                Clear(ClearType::CurrentLine),
-                cursor::MoveTo(0, (self.size.1 + 2) as u16)
-            )?;
-            self.out.write(cmd.to_string().as_bytes())?;
+            self.out.write(cmd.as_bytes())?;
         }
+
         Ok(())
     }
 

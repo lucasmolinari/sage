@@ -266,7 +266,7 @@ impl Editor {
     fn exec_cmd(&mut self) -> io::Result<bool> {
         if let Some(it) = &self.output.get_cmd() {
             let q = match it[..] {
-                [":q"] => {
+                ["q"] => {
                     if self.output.dirty > 0 {
                         self.output.set_message(
                             "Found unsaved changes, q! to force quit",
@@ -277,8 +277,8 @@ impl Editor {
                         true
                     }
                 }
-                [":q!"] => true,
-                [":w"] => {
+                ["q!"] => true,
+                ["w"] => {
                     if self.e_rows.filename.is_none() {
                         self.output
                             .set_message("No file name specified", MessageLevel::Danger);
@@ -293,7 +293,7 @@ impl Editor {
                     })?;
                     false
                 }
-                [":wq"] => {
+                ["wq"] => {
                     match self.save() {
                         Ok(len) => {
                             self.output.set_message(
@@ -310,7 +310,7 @@ impl Editor {
                     }
                     true
                 }
-                [":w", name] => {
+                ["w", name] => {
                     self.e_rows.set_filename(name);
                     match self.save() {
                         Ok(len) => {
@@ -361,7 +361,6 @@ impl Editor {
             }
             Mode::Command => {
                 execute!(stdout, SetCursorStyle::BlinkingUnderScore)?;
-                self.output.push_cmd(':');
             }
         };
         self.mode = mode;
