@@ -1,7 +1,7 @@
 use std::{
     env, fs,
     io::{self, Write},
-    path::{Path, PathBuf},
+    path::{self, PathBuf},
     time::Duration,
 };
 
@@ -17,7 +17,7 @@ use crate::{
     TAB_SZ,
 };
 
-#[allow(dead_code)]
+#[derive(PartialEq)]
 pub enum Mode {
     Normal,
     Insert,
@@ -76,7 +76,7 @@ impl EditorRows {
         let args: Vec<String> = env::args().collect();
         match args.get(1) {
             Some(p) => {
-                let path = Path::new(p).canonicalize()?;
+                let path = path::absolute(p)?;
                 Ok(Self::from_file(path)?)
             }
             None => {
@@ -90,11 +90,26 @@ impl EditorRows {
     }
 
     fn from_file(path: PathBuf) -> io::Result<Self> {
-        let contents = fs::read_to_string(&path)?;
+        let contents = if path.try_exists()? {
+            fs::read_to_string(&path)?
+        } else {
+            String::new()
+        };
+
+        let rows = if contents.is_empty() {
+            vec![ERow::new(String::new())]
+        } else {
+            contents.lines().map(|l| ERow::new(l.into())).collect()
+        };
+
         Ok(Self {
-            rows: contents.lines().map(|l| ERow::new(l.into())).collect(),
+            rows,
             filename: Some(path),
         })
+    }
+
+    fn set_filename(&mut self, name: &str) {
+        self.filename = Some(name.into());
     }
 
     pub fn insert_erow(&mut self, i: usize) {
@@ -144,7 +159,7 @@ impl Editor {
             EnterAlternateScreen,
             cursor::MoveTo(0, 0)
         )?;
-        self.output.render_screen(&self.e_rows)?;
+        self.output.render_screen(&self.e_rows, &self.mode)?;
         Ok(())
     }
     pub fn poll(&mut self) -> io::Result<()> {
@@ -169,7 +184,7 @@ impl Editor {
                             );
                             self.output.dirty = 0;
                         })?;
-                        self.output.render_screen(&self.e_rows)?;
+                        self.output.render_screen(&self.e_rows, &self.mode)?;
                     }
                     Event::Key(KeyEvent {
                         kind: KeyEventKind::Press,
@@ -179,9 +194,14 @@ impl Editor {
                         match self.mode {
                             Mode::Normal => self.handle_normal_press(code)?,
                             Mode::Insert => self.handle_insert_press(code)?,
-                            Mode::Command => todo!(),
+                            Mode::Command => {
+                                let q = self.handle_command_press(code)?;
+                                if q {
+                                    break;
+                                }
+                            }
                         }
-                        self.output.render_screen(&self.e_rows)?;
+                        self.output.render_screen(&self.e_rows, &self.mode)?;
                     }
                     _ => continue,
                 }
@@ -192,6 +212,7 @@ impl Editor {
 
     fn handle_normal_press(&mut self, code: KeyCode) -> io::Result<()> {
         match code {
+            KeyCode::Char(':') => self.change_mode(Mode::Command)?,
             KeyCode::Up | KeyCode::Char('k') => {
                 self.output.move_cursor(Direction::Up, &self.e_rows)
             }
@@ -228,15 +249,120 @@ impl Editor {
         Ok(())
     }
 
+    fn handle_command_press(&mut self, code: KeyCode) -> io::Result<bool> {
+        match code {
+            KeyCode::Esc => self.change_mode(Mode::Normal)?,
+            KeyCode::Char(c) => self.output.push_cmd(c),
+            KeyCode::Enter => {
+                let q = self.exec_cmd()?;
+                self.change_mode(Mode::Normal)?;
+                return Ok(q);
+            }
+            _ => {}
+        }
+        Ok(false)
+    }
+
+    fn exec_cmd(&mut self) -> io::Result<bool> {
+        if let Some(it) = &self.output.get_cmd() {
+            let q = match it[..] {
+                [":q"] => {
+                    if self.output.dirty > 0 {
+                        self.output.set_message(
+                            "Found unsaved changes, q! to force quit",
+                            MessageLevel::Danger,
+                        );
+                        false
+                    } else {
+                        true
+                    }
+                }
+                [":q!"] => true,
+                [":w"] => {
+                    if self.e_rows.filename.is_none() {
+                        self.output
+                            .set_message("No file name specified", MessageLevel::Danger);
+                        return Ok(false);
+                    }
+                    self.save().map(|len| {
+                        self.output.set_message(
+                            &format!("{} bytes written to disk", len),
+                            MessageLevel::Normal,
+                        );
+                        self.output.dirty = 0;
+                    })?;
+                    false
+                }
+                [":wq"] => {
+                    match self.save() {
+                        Ok(len) => {
+                            self.output.set_message(
+                                &format!("{} bytes written to disk", len),
+                                MessageLevel::Normal,
+                            );
+                            self.output.dirty = 0;
+                        }
+                        Err(e) => {
+                            self.output
+                                .set_message(&e.to_string(), MessageLevel::Danger);
+                            return Ok(false);
+                        }
+                    }
+                    true
+                }
+                [":w", name] => {
+                    self.e_rows.set_filename(name);
+                    match self.save() {
+                        Ok(len) => {
+                            self.output.set_message(
+                                &format!("{} bytes written to disk", len),
+                                MessageLevel::Normal,
+                            );
+                            self.output.dirty = 0;
+                        }
+                        Err(e) => {
+                            self.output
+                                .set_message(&e.to_string(), MessageLevel::Danger);
+                            return Ok(false);
+                        }
+                    };
+                    false
+                }
+                _ => {
+                    self.output.set_message(
+                        &format!("Unknown command \"{}\"", it.concat()),
+                        MessageLevel::Danger,
+                    );
+                    false
+                }
+            };
+            return Ok(q);
+        } else {
+            self.output
+                .set_message("No command found", MessageLevel::Danger);
+            Ok(false)
+        }
+    }
     fn change_mode(&mut self, mode: Mode) -> io::Result<()> {
         let mut stdout = io::stdout();
+
+        if self.mode == Mode::Command {
+            self.output.clear_cmd();
+        }
         match mode {
             Mode::Normal => {
                 execute!(stdout, SetCursorStyle::BlinkingBlock)?;
                 self.output.move_cursor(Direction::Left, &self.e_rows);
             }
-            Mode::Insert => execute!(stdout, SetCursorStyle::BlinkingUnderScore)?,
-            Mode::Command => todo!(),
+            Mode::Insert => {
+                execute!(stdout, SetCursorStyle::BlinkingUnderScore)?;
+                self.output
+                    .set_message("-- INSERT --", MessageLevel::Normal);
+            }
+            Mode::Command => {
+                execute!(stdout, SetCursorStyle::BlinkingUnderScore)?;
+                self.output.push_cmd(':');
+            }
         };
         self.mode = mode;
         Ok(())

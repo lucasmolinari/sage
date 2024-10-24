@@ -9,7 +9,10 @@ use std::{
     io::{self, BufWriter, Stdout, Write},
 };
 
-use crate::{editor::EditorRows, TAB_SZ};
+use crate::{
+    editor::{EditorRows, Mode},
+    TAB_SZ,
+};
 
 pub enum Direction {
     Up,
@@ -23,6 +26,7 @@ pub struct Output {
     c_ctrl: CursorController,
     out: BufWriter<Stdout>,
     msg: Option<StatusMessage>,
+    pub cmd: Option<String>,
     pub dirty: u64,
 }
 impl Output {
@@ -33,6 +37,7 @@ impl Output {
             c_ctrl: CursorController::new(size),
             out: BufWriter::new(io::stdout()),
             msg: Some(StatusMessage::new("Sage Text", MessageLevel::Normal)),
+            cmd: None,
             dirty: 0,
         })
     }
@@ -46,20 +51,36 @@ impl Output {
         )
     }
 
-    pub fn render_screen(&mut self, rows: &EditorRows) -> io::Result<()> {
-        self.c_ctrl.scroll(rows);
-
-        queue!(self.out, cursor::Hide, cursor::MoveTo(0, 0))?;
-
-        self.render_lines(rows)?;
-        self.render_bar(rows)?;
-        self.render_message()?;
-
+    pub fn render_screen(&mut self, rows: &EditorRows, mode: &Mode) -> io::Result<()> {
         let c_x = (self.c_ctrl.rx - self.c_ctrl.x_offset) as u16;
         let c_y = (self.c_ctrl.cy - self.c_ctrl.y_offset) as u16;
 
-        queue!(self.out, cursor::Show, cursor::MoveTo(c_x, c_y))?;
-        self.out.flush()
+        match mode {
+            Mode::Command => {
+                let mut x = 0;
+                if self.cmd.is_some() {
+                    x = self.cmd.as_ref().unwrap().len()
+                }
+                execute!(
+                    io::stdout(),
+                    cursor::MoveTo(x as u16, (self.size.1 + 2) as u16)
+                )?;
+                self.render_command()?;
+            }
+            _ => {
+                self.c_ctrl.scroll(rows);
+
+                queue!(self.out, cursor::Hide, cursor::MoveTo(0, 0))?;
+
+                self.render_lines(rows)?;
+                self.render_bar(rows)?;
+                self.render_message()?;
+
+                queue!(self.out, cursor::Show, cursor::MoveTo(c_x, c_y))?;
+            }
+        };
+        self.out.flush()?;
+        Ok(())
     }
 
     fn render_lines(&mut self, rows: &EditorRows) -> io::Result<()> {
@@ -134,6 +155,18 @@ impl Output {
         Ok(())
     }
 
+    fn render_command(&mut self) -> io::Result<()> {
+        if let Some(cmd) = &self.cmd {
+            queue!(
+                self.out,
+                Clear(ClearType::CurrentLine),
+                cursor::MoveTo(0, (self.size.1 + 2) as u16)
+            )?;
+            self.out.write(cmd.to_string().as_bytes())?;
+        }
+        Ok(())
+    }
+
     pub fn insert(&mut self, e_rows: &mut EditorRows, c: char) {
         let (x, y) = (self.c_ctrl.cx, self.c_ctrl.cy);
         e_rows.get_erow_mut(y).insert(x, c);
@@ -152,6 +185,18 @@ impl Output {
 
     pub fn set_message(&mut self, msg: &str, level: MessageLevel) {
         self.msg = Some(StatusMessage::new(msg, level));
+    }
+
+    pub fn push_cmd(&mut self, c: char) {
+        self.cmd.get_or_insert_with(String::new).push(c);
+    }
+
+    pub fn get_cmd(&self) -> Option<Vec<&str>> {
+        self.cmd.as_ref().map(|cmd| cmd.split(' ').collect())
+    }
+
+    pub fn clear_cmd(&mut self) {
+        self.cmd = None;
     }
 }
 
