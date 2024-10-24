@@ -13,7 +13,7 @@ use crossterm::{
 };
 
 use crate::{
-    out::{self, Direction},
+    out::{self, Direction, MessageLevel},
     TAB_SZ,
 };
 
@@ -161,7 +161,16 @@ impl Editor {
                         modifiers: KeyModifiers::CONTROL,
                         code: KeyCode::Char('s'),
                         ..
-                    }) => self.save()?,
+                    }) => {
+                        self.save().map(|len| {
+                            self.output.set_message(
+                                &format!("{} bytes written to disk", len),
+                                MessageLevel::Normal,
+                            );
+                            self.output.dirty = 0;
+                        })?;
+                        self.output.render_screen(&self.e_rows)?;
+                    }
                     Event::Key(KeyEvent {
                         kind: KeyEventKind::Press,
                         code,
@@ -233,7 +242,7 @@ impl Editor {
         Ok(())
     }
 
-    fn save(&self) -> io::Result<()> {
+    fn save(&self) -> io::Result<usize> {
         match &self.e_rows.filename {
             None => Err(io::Error::new(
                 io::ErrorKind::Other,
@@ -249,7 +258,10 @@ impl Editor {
                     .collect::<Vec<&str>>()
                     .join("\n");
                 f.set_len(contents.len() as u64)?;
-                f.write_all(contents.as_bytes())
+
+                let bytes = contents.as_bytes();
+                f.write_all(bytes)?;
+                Ok(bytes.len())
             }
         }
     }

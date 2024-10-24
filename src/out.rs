@@ -22,14 +22,18 @@ pub struct Output {
     size: (usize, usize),
     c_ctrl: CursorController,
     out: BufWriter<Stdout>,
+    msg: Option<StatusMessage>,
+    pub dirty: u64,
 }
 impl Output {
     pub fn new() -> io::Result<Self> {
-        let size = terminal::size().map(|(x, y)| (x as usize, y as usize - 1))?;
+        let size = terminal::size().map(|(x, y)| (x as usize, y as usize - 2))?;
         Ok(Self {
             size,
             c_ctrl: CursorController::new(size),
             out: BufWriter::new(io::stdout()),
+            msg: Some(StatusMessage::new("Sage Text", MessageLevel::Normal)),
+            dirty: 0,
         })
     }
 
@@ -49,6 +53,7 @@ impl Output {
 
         self.render_lines(rows)?;
         self.render_bar(rows)?;
+        self.render_message()?;
 
         let c_x = (self.c_ctrl.rx - self.c_ctrl.x_offset) as u16;
         let c_y = (self.c_ctrl.cy - self.c_ctrl.y_offset) as u16;
@@ -81,12 +86,13 @@ impl Output {
         self.out
             .write(&style::Attribute::Reverse.to_string().as_bytes())?;
         let info_f = format!(
-            "\"{}\" {}L, {}B",
+            "\"{}\"{} {}L, {}B",
             rows.filename
                 .as_ref()
                 .and_then(|p| p.file_name())
                 .and_then(|n| n.to_str())
                 .unwrap_or("No name"),
+            if self.dirty > 0 { "*" } else { "" },
             rows.num_rows(),
             rows.filename
                 .as_ref()
@@ -107,6 +113,24 @@ impl Output {
         }
         self.out
             .write(&style::Attribute::Reset.to_string().as_bytes())?;
+        self.out.write("\r\n".to_string().as_bytes())?;
+        Ok(())
+    }
+
+    fn render_message(&mut self) -> io::Result<()> {
+        queue!(self.out, Clear(ClearType::CurrentLine))?;
+        if let Some(msg) = &self.msg {
+            let content = &msg.content;
+            let style = match msg.level {
+                MessageLevel::Normal => style::Attribute::Reset.to_string(),
+                MessageLevel::Danger => style::SetBackgroundColor(style::Color::Red).to_string(),
+            };
+            self.out.write(style.as_bytes())?;
+            self.out
+                .write(content[..cmp::min(content.len(), self.size.0)].as_bytes())?;
+            self.out
+                .write(style::Attribute::Reset.to_string().as_bytes())?;
+        };
         Ok(())
     }
 
@@ -114,14 +138,20 @@ impl Output {
         let (x, y) = (self.c_ctrl.cx, self.c_ctrl.cy);
         e_rows.get_erow_mut(y).insert(x, c);
         self.c_ctrl.cx += 1;
+        self.dirty += 1;
     }
 
     pub fn insert_erow(&mut self, e_rows: &mut EditorRows) {
         e_rows.insert_erow(self.c_ctrl.cy + 1);
+        self.dirty += 1;
     }
 
     pub fn move_cursor(&mut self, dir: Direction, e_rows: &EditorRows) {
         self.c_ctrl.mv(dir, e_rows);
+    }
+
+    pub fn set_message(&mut self, msg: &str, level: MessageLevel) {
+        self.msg = Some(StatusMessage::new(msg, level));
     }
 }
 
@@ -197,6 +227,23 @@ impl CursorController {
         self.x_offset = cmp::min(self.x_offset, self.rx);
         if self.rx >= self.x_offset + self.screen_size.0 {
             self.x_offset = self.rx - self.screen_size.0 + 1;
+        }
+    }
+}
+
+pub enum MessageLevel {
+    Normal,
+    Danger,
+}
+struct StatusMessage {
+    content: String,
+    level: MessageLevel,
+}
+impl StatusMessage {
+    fn new(msg: &str, level: MessageLevel) -> Self {
+        Self {
+            content: msg.into(),
+            level,
         }
     }
 }
