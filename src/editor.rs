@@ -178,12 +178,48 @@ impl Editor {
                         ..
                     }) => {
                         self.save().map(|len| {
-                            self.output.set_message(
+                            self.output.set_stt_msg(
                                 &format!("{} bytes written to disk", len),
                                 MessageLevel::Normal,
                             );
                             self.output.dirty = 0;
                         })?;
+                        self.output.render_screen(&self.e_rows, &self.mode)?;
+                    }
+                    Event::Key(KeyEvent {
+                        kind: KeyEventKind::Press,
+                        code: KeyCode::Up,
+                        ..
+                    }) => {
+                        self.output
+                            .move_cursor(Direction::Up, &self.e_rows, &self.mode);
+                        self.output.render_screen(&self.e_rows, &self.mode)?;
+                    }
+                    Event::Key(KeyEvent {
+                        kind: KeyEventKind::Press,
+                        code: KeyCode::Down,
+                        ..
+                    }) => {
+                        self.output
+                            .move_cursor(Direction::Down, &self.e_rows, &self.mode);
+                        self.output.render_screen(&self.e_rows, &self.mode)?;
+                    }
+                    Event::Key(KeyEvent {
+                        kind: KeyEventKind::Press,
+                        code: KeyCode::Left,
+                        ..
+                    }) => {
+                        self.output
+                            .move_cursor(Direction::Left, &self.e_rows, &self.mode);
+                        self.output.render_screen(&self.e_rows, &self.mode)?;
+                    }
+                    Event::Key(KeyEvent {
+                        kind: KeyEventKind::Press,
+                        code: KeyCode::Right,
+                        ..
+                    }) => {
+                        self.output
+                            .move_cursor(Direction::Right, &self.e_rows, &self.mode);
                         self.output.render_screen(&self.e_rows, &self.mode)?;
                     }
                     Event::Key(KeyEvent {
@@ -214,26 +250,32 @@ impl Editor {
         match code {
             KeyCode::Char(':') => self.change_mode(Mode::Command)?,
             KeyCode::Up | KeyCode::Char('k') => {
-                self.output.move_cursor(Direction::Up, &self.e_rows)
+                self.output
+                    .move_cursor(Direction::Up, &self.e_rows, &self.mode)
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.output.move_cursor(Direction::Down, &self.e_rows)
+                self.output
+                    .move_cursor(Direction::Down, &self.e_rows, &self.mode)
             }
             KeyCode::Left | KeyCode::Char('h') => {
-                self.output.move_cursor(Direction::Left, &self.e_rows)
+                self.output
+                    .move_cursor(Direction::Left, &self.e_rows, &self.mode)
             }
             KeyCode::Right | KeyCode::Char('l') => {
-                self.output.move_cursor(Direction::Right, &self.e_rows)
+                self.output
+                    .move_cursor(Direction::Right, &self.e_rows, &self.mode)
             }
             KeyCode::Char('i') => self.change_mode(Mode::Insert)?,
             KeyCode::Char('a') => {
                 self.change_mode(Mode::Insert)?;
-                //self.output.move_cursor(Direction::Right, &self.e_rows);
+                self.output
+                    .move_cursor(Direction::Right, &self.e_rows, &Mode::Insert);
             }
             KeyCode::Char('o') => {
-                self.change_mode(Mode::Insert)?;
                 self.output.insert_erow(&mut self.e_rows);
-                self.output.move_cursor(Direction::Down, &self.e_rows);
+                self.output
+                    .move_cursor(Direction::Down, &self.e_rows, &self.mode);
+                self.change_mode(Mode::Insert)?;
             }
             _ => {}
         }
@@ -252,7 +294,11 @@ impl Editor {
     fn handle_command_press(&mut self, code: KeyCode) -> io::Result<bool> {
         match code {
             KeyCode::Esc => self.change_mode(Mode::Normal)?,
-            KeyCode::Char(c) => self.output.push_cmd(c),
+            KeyCode::Char(c) => {
+                self.output.push_cmd(c);
+                self.output
+                    .move_cursor(Direction::Right, &self.e_rows, &self.mode);
+            }
             KeyCode::Enter => {
                 let q = self.exec_cmd()?;
                 self.change_mode(Mode::Normal)?;
@@ -268,7 +314,7 @@ impl Editor {
             let q = match it[..] {
                 ["q"] => {
                     if self.output.dirty > 0 {
-                        self.output.set_message(
+                        self.output.set_cmd_msg(
                             "Found unsaved changes, q! to force quit",
                             MessageLevel::Danger,
                         );
@@ -281,11 +327,11 @@ impl Editor {
                 ["w"] => {
                     if self.e_rows.filename.is_none() {
                         self.output
-                            .set_message("No file name specified", MessageLevel::Danger);
+                            .set_cmd_msg("No file name specified", MessageLevel::Danger);
                         return Ok(false);
                     }
                     self.save().map(|len| {
-                        self.output.set_message(
+                        self.output.set_cmd_msg(
                             &format!("{} bytes written to disk", len),
                             MessageLevel::Normal,
                         );
@@ -296,7 +342,7 @@ impl Editor {
                 ["wq"] => {
                     match self.save() {
                         Ok(len) => {
-                            self.output.set_message(
+                            self.output.set_cmd_msg(
                                 &format!("{} bytes written to disk", len),
                                 MessageLevel::Normal,
                             );
@@ -304,7 +350,7 @@ impl Editor {
                         }
                         Err(e) => {
                             self.output
-                                .set_message(&e.to_string(), MessageLevel::Danger);
+                                .set_cmd_msg(&e.to_string(), MessageLevel::Danger);
                             return Ok(false);
                         }
                     }
@@ -314,7 +360,7 @@ impl Editor {
                     self.e_rows.set_filename(name);
                     match self.save() {
                         Ok(len) => {
-                            self.output.set_message(
+                            self.output.set_cmd_msg(
                                 &format!("{} bytes written to disk", len),
                                 MessageLevel::Normal,
                             );
@@ -322,14 +368,14 @@ impl Editor {
                         }
                         Err(e) => {
                             self.output
-                                .set_message(&e.to_string(), MessageLevel::Danger);
+                                .set_cmd_msg(&e.to_string(), MessageLevel::Danger);
                             return Ok(false);
                         }
                     };
                     false
                 }
                 _ => {
-                    self.output.set_message(
+                    self.output.set_cmd_msg(
                         &format!("Unknown command \"{}\"", it.concat()),
                         MessageLevel::Danger,
                     );
@@ -339,28 +385,31 @@ impl Editor {
             return Ok(q);
         } else {
             self.output
-                .set_message("No command found", MessageLevel::Danger);
+                .set_cmd_msg("No command found", MessageLevel::Danger);
             Ok(false)
         }
     }
     fn change_mode(&mut self, mode: Mode) -> io::Result<()> {
         let mut stdout = io::stdout();
 
-        if self.mode == Mode::Command {
-            self.output.clear_cmd();
-        }
         match mode {
             Mode::Normal => {
                 execute!(stdout, SetCursorStyle::BlinkingBlock)?;
-                self.output.move_cursor(Direction::Left, &self.e_rows);
+                self.output
+                    .move_cursor(Direction::Left, &self.e_rows, &Mode::Normal);
             }
             Mode::Insert => {
                 execute!(stdout, SetCursorStyle::BlinkingUnderScore)?;
+                self.output.clear_cmd_msg();
                 self.output
-                    .set_message("-- INSERT --", MessageLevel::Normal);
+                    .set_stt_msg("-- INSERT --", MessageLevel::Normal);
             }
             Mode::Command => {
                 execute!(stdout, SetCursorStyle::BlinkingUnderScore)?;
+                self.output.reset_cmd_cursor();
+                self.output.clear_stt_msg();
+                self.output.clear_cmd_msg();
+                self.output.clear_cmd();
             }
         };
         self.mode = mode;
@@ -394,9 +443,9 @@ impl Editor {
 
 impl Drop for Editor {
     fn drop(&mut self) {
-        let mut stdout = io::stdout();
-        self.output.clear_screen().expect("Failed to clear screen");
-        terminal::disable_raw_mode().expect("Failed to disable raw mode");
-        execute!(stdout, LeaveAlternateScreen).expect("Failed to leave alternate screen");
+        //let mut stdout = io::stdout();
+        //self.output.clear_screen().expect("Failed to clear screen");
+        //terminal::disable_raw_mode().expect("Failed to disable raw mode");
+        //execute!(stdout, LeaveAlternateScreen).expect("Failed to leave alternate screen");
     }
 }

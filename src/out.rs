@@ -25,7 +25,8 @@ pub struct Output {
     size: (usize, usize),
     c_ctrl: CursorController,
     out: BufWriter<Stdout>,
-    msg: Option<StatusMessage>,
+    stt_msg: Option<StatusMessage>,
+    cmd_msg: Option<StatusMessage>,
     pub cmd: Option<String>,
     pub dirty: u64,
 }
@@ -36,7 +37,8 @@ impl Output {
             size,
             c_ctrl: CursorController::new(size),
             out: BufWriter::new(io::stdout()),
-            msg: None,
+            stt_msg: None,
+            cmd_msg: None,
             cmd: None,
             dirty: 0,
         })
@@ -52,30 +54,34 @@ impl Output {
     }
 
     pub fn render_screen(&mut self, rows: &EditorRows, mode: &Mode) -> io::Result<()> {
+<<<<<<< HEAD
         let c_x = (self.c_ctrl.rx - self.c_ctrl.x_offset) as u16;
         let c_y = (self.c_ctrl.cy - self.c_ctrl.y_offset) as u16;
 
+=======
+        queue!(self.out, cursor::Hide, cursor::MoveTo(0, 0))?;
+
+        self.c_ctrl.scroll(rows);
+        let c_x = (self.c_ctrl.rx - self.c_ctrl.x_offset) as u16;
+        let c_y = (self.c_ctrl.cy - self.c_ctrl.y_offset) as u16;
+
+        self.render_lines(rows)?;
+        self.render_bar(rows)?;
+
+>>>>>>> 30d1433 (Improve cursor movement)
         match mode {
-            Mode::Command => {
-                let mut x = 0;
-                if self.cmd.is_some() {
-                    x = self.cmd.as_ref().unwrap().len()
-                }
-                execute!(
-                    io::stdout(),
-                    cursor::MoveTo(x as u16, (self.size.1 + 2) as u16)
-                )?;
-                self.render_command()?;
-            }
+            Mode::Command => self.render_command()?,
             _ => {
+<<<<<<< HEAD
                 self.c_ctrl.scroll(rows);
 
                 queue!(self.out, cursor::Hide, cursor::MoveTo(0, 0))?;
 
                 self.render_lines(rows)?;
                 self.render_bar(rows)?;
+=======
+>>>>>>> 30d1433 (Improve cursor movement)
                 self.render_message()?;
-
                 queue!(self.out, cursor::Show, cursor::MoveTo(c_x, c_y))?;
             }
         };
@@ -122,7 +128,13 @@ impl Output {
         );
         self.out.write(info_f.as_bytes())?;
 
-        let info_c = format!("{}:{}/{}", c_y + 1, c_x + 1, self.c_ctrl.rx + 1);
+        let info_c = format!(
+            "{}:{}/{} {}",
+            c_y + 1,
+            c_x + 1,
+            self.c_ctrl.rx + 1,
+            self.c_ctrl.cmdx
+        );
         let info_c_pos = self.size.0 - info_c.len();
         for i in info_f.len()..self.size.0 {
             if i >= info_c_pos {
@@ -140,7 +152,7 @@ impl Output {
 
     fn render_message(&mut self) -> io::Result<()> {
         queue!(self.out, Clear(ClearType::CurrentLine))?;
-        if let Some(msg) = &self.msg {
+        if let Some(msg) = self.cmd_msg.as_ref().or(self.stt_msg.as_ref()) {
             let content = &msg.content;
             let style = match msg.level {
                 MessageLevel::Normal => style::Attribute::Reset.to_string(),
@@ -151,21 +163,28 @@ impl Output {
                 .write(content[..cmp::min(content.len(), self.size.0)].as_bytes())?;
             self.out
                 .write(style::Attribute::Reset.to_string().as_bytes())?;
-        };
+        }
         Ok(())
     }
 
     fn render_command(&mut self) -> io::Result<()> {
+        let y = (self.size.1 + 2) as u16;
         queue!(
             self.out,
             Clear(ClearType::CurrentLine),
-            cursor::MoveTo(0, (self.size.1 + 2) as u16)
+            cursor::Hide,
+            cursor::MoveTo(0, y),
         )?;
         self.out.write(b":")?;
 
         if let Some(cmd) = &self.cmd {
             self.out.write(cmd.as_bytes())?;
         }
+        queue!(
+            self.out,
+            cursor::MoveTo(self.c_ctrl.cmdx as u16, y),
+            cursor::Show
+        )?;
 
         Ok(())
     }
@@ -182,12 +201,28 @@ impl Output {
         self.dirty += 1;
     }
 
-    pub fn move_cursor(&mut self, dir: Direction, e_rows: &EditorRows) {
-        self.c_ctrl.mv(dir, e_rows);
+    pub fn move_cursor(&mut self, dir: Direction, e_rows: &EditorRows, mode: &Mode) {
+        self.c_ctrl.mv(dir, e_rows, mode);
     }
 
-    pub fn set_message(&mut self, msg: &str, level: MessageLevel) {
-        self.msg = Some(StatusMessage::new(msg, level));
+    pub fn reset_cmd_cursor(&mut self) {
+        self.c_ctrl.cmdx = 1;
+    }
+
+    pub fn set_stt_msg(&mut self, msg: &str, level: MessageLevel) {
+        self.stt_msg = Some(StatusMessage::new(msg, level));
+    }
+
+    pub fn set_cmd_msg(&mut self, msg: &str, level: MessageLevel) {
+        self.cmd_msg = Some(StatusMessage::new(msg, level));
+    }
+
+    pub fn clear_stt_msg(&mut self) {
+        self.stt_msg = None;
+    }
+
+    pub fn clear_cmd_msg(&mut self) {
+        self.cmd_msg = None;
     }
 
     pub fn push_cmd(&mut self, c: char) {
@@ -207,6 +242,7 @@ struct CursorController {
     cx: usize,
     cy: usize,
     rx: usize,
+    cmdx: usize,
     screen_size: (usize, usize),
     y_offset: usize,
     x_offset: usize,
@@ -217,36 +253,52 @@ impl CursorController {
             cx: 0,
             cy: 0,
             rx: 0,
+            cmdx: 1,
             screen_size,
             y_offset: 0,
             x_offset: 0,
         }
     }
 
-    fn mv(&mut self, dir: Direction, e_rows: &EditorRows) {
+    fn mv(&mut self, dir: Direction, e_rows: &EditorRows, mode: &Mode) {
         let n_rows = e_rows.num_rows() - 1;
-        match dir {
-            Direction::Up => self.cy = self.cy.saturating_sub(1),
-            Direction::Left => self.cx = self.cx.saturating_sub(1),
-            Direction::Down => {
-                if self.cy < n_rows {
-                    self.cy += 1;
-                }
-            }
-            Direction::Right => {
-                let row = e_rows.get_raw(self.cy);
-                if self.cx < row.len().saturating_sub(1) {
-                    self.cx += 1;
-                    if row.chars().nth(self.cx) == Some('\t') {
-                        self.cx += 1;
+        let row = e_rows.get_raw(self.cy);
+        let row_len = match mode {
+            Mode::Normal => row.len().saturating_sub(1),
+            _ => e_rows.get_raw(self.cy).len(),
+        };
+        match mode {
+            Mode::Command => match dir {
+                Direction::Left => self.cmdx = self.cmdx.saturating_sub(1),
+                Direction::Right => {
+                    if self.cmdx < row_len {
+                        self.cmdx += 1;
                     }
                 }
+                _ => {}
+            },
+            _ => {
+                match dir {
+                    Direction::Up => self.cy = self.cy.saturating_sub(1),
+                    Direction::Left => self.cx = self.cx.saturating_sub(1),
+                    Direction::Down => {
+                        if self.cy < n_rows {
+                            self.cy += 1;
+                        }
+                    }
+                    Direction::Right => {
+                        if self.cx < row_len {
+                            self.cx += 1;
+                            if row.chars().nth(self.cx) == Some('\t') {
+                                self.cx += 1;
+                            }
+                        }
+                    }
+                };
+                self.cx = cmp::min(self.cx, row_len);
             }
-        };
-        let r_len = e_rows.get_raw(self.cy).len().saturating_sub(1);
-        self.cx = cmp::min(self.cx, r_len);
+        }
     }
-
     fn get_rx(&self, raw: &str) -> usize {
         raw.chars().take(self.cx).fold(0, |rx, c| {
             if c == '\t' {
