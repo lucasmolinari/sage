@@ -44,6 +44,11 @@ impl ERow {
         self.render();
     }
 
+    pub fn clear(&mut self) {
+        self.raw.clear();
+        self.render();
+    }
+
     fn render(&mut self) {
         let cap = self
             .raw
@@ -114,6 +119,14 @@ impl EditorRows {
 
     pub fn insert_erow(&mut self, i: usize) {
         self.rows.insert(i, ERow::default());
+    }
+
+    pub fn delete_erow(&mut self, i: usize) {
+        self.rows.remove(i);
+    }
+
+    pub fn clear_erow(&mut self, i: usize) {
+        self.rows.get_mut(i).map(|r| r.clear());
     }
 
     pub fn get_raw(&self, i: usize) -> &str {
@@ -288,6 +301,14 @@ impl Editor {
                 if let Some(e) = self.last_code {
                     match e {
                         KeyCode::Char('g') => self.output.goto_y(0),
+                        _ => {}
+                    }
+                }
+            }
+            KeyCode::Char('d') => {
+                if let Some(e) = self.last_code {
+                    match e {
+                        KeyCode::Char('d') => self.output.delete_line(&mut self.e_rows),
                         _ => {}
                     }
                 }

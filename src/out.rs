@@ -194,6 +194,18 @@ impl Output {
         self.dirty += 1;
     }
 
+    pub fn delete_line(&mut self, e_rows: &mut EditorRows) {
+        if self.c_ctrl.cy == 0 {
+            e_rows.clear_erow(0);
+            self.c_ctrl.cx = 0;
+        } else {
+            e_rows.delete_erow(self.c_ctrl.cy);
+            if self.c_ctrl.cy > e_rows.num_rows() - 1 {
+                self.c_ctrl.cy -= 1;
+            }
+        }
+    }
+
     pub fn goto_y(&mut self, y: usize) {
         self.c_ctrl.cy = y;
     }
