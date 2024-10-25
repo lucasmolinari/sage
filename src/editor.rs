@@ -141,6 +141,7 @@ pub struct Editor {
     mode: Mode,
     output: out::Output,
     e_rows: EditorRows,
+    last_code: Option<KeyCode>,
 }
 impl Editor {
     pub fn new() -> io::Result<Self> {
@@ -148,6 +149,7 @@ impl Editor {
             mode: Mode::Normal,
             output: out::Output::new()?,
             e_rows: EditorRows::new()?,
+            last_code: None,
         })
     }
     pub fn init(&mut self) -> io::Result<()> {
@@ -169,11 +171,13 @@ impl Editor {
                 match event {
                     Event::Key(KeyEvent {
                         modifiers: KeyModifiers::CONTROL,
+                        kind: KeyEventKind::Press,
                         code: KeyCode::Char('q'),
                         ..
                     }) => break,
                     Event::Key(KeyEvent {
                         modifiers: KeyModifiers::CONTROL,
+                        kind: KeyEventKind::Press,
                         code: KeyCode::Char('s'),
                         ..
                     }) => {
@@ -272,13 +276,25 @@ impl Editor {
                     .move_cursor(Direction::Right, &self.e_rows, &Mode::Insert);
             }
             KeyCode::Char('o') => {
-                self.output.insert_erow(&mut self.e_rows);
-                self.output
-                    .move_cursor(Direction::Down, &self.e_rows, &self.mode);
+                self.output.new_line(Direction::Down, &mut self.e_rows);
                 self.change_mode(Mode::Insert)?;
+            }
+            KeyCode::Char('O') => {
+                self.output.new_line(Direction::Up, &mut self.e_rows);
+                self.change_mode(Mode::Insert)?;
+            }
+            KeyCode::Char('G') => self.output.goto_y(self.e_rows.num_rows() - 1),
+            KeyCode::Char('g') => {
+                if let Some(e) = self.last_code {
+                    match e {
+                        KeyCode::Char('g') => self.output.goto_y(0),
+                        _ => {}
+                    }
+                }
             }
             _ => {}
         }
+        self.last_code = Some(code);
         Ok(())
     }
 
@@ -286,6 +302,7 @@ impl Editor {
         match code {
             KeyCode::Esc => self.change_mode(Mode::Normal)?,
             KeyCode::Char(c) => self.output.insert(&mut self.e_rows, c),
+            KeyCode::Tab => self.output.insert(&mut self.e_rows, '\t'),
             _ => {}
         }
         Ok(())

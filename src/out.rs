@@ -14,6 +14,7 @@ use crate::{
     TAB_SZ,
 };
 
+#[derive(Debug)]
 pub enum Direction {
     Up,
     Down,
@@ -181,9 +182,20 @@ impl Output {
         self.dirty += 1;
     }
 
-    pub fn insert_erow(&mut self, e_rows: &mut EditorRows) {
-        e_rows.insert_erow(self.c_ctrl.cy + 1);
+    pub fn new_line(&mut self, dir: Direction, e_rows: &mut EditorRows) {
+        let y = match dir {
+            Direction::Up => self.c_ctrl.cy,
+            Direction::Down => self.c_ctrl.cy + 1,
+            _ => unimplemented!(),
+        };
+        e_rows.insert_erow(y);
+        self.c_ctrl.cy = y;
+        self.c_ctrl.cx = 0;
         self.dirty += 1;
+    }
+
+    pub fn goto_y(&mut self, y: usize) {
+        self.c_ctrl.cy = y;
     }
 
     pub fn move_cursor(&mut self, dir: Direction, e_rows: &EditorRows, mode: &Mode) {
