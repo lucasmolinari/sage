@@ -443,9 +443,9 @@ impl Editor {
 
 impl Drop for Editor {
     fn drop(&mut self) {
-        //let mut stdout = io::stdout();
-        //self.output.clear_screen().expect("Failed to clear screen");
-        //terminal::disable_raw_mode().expect("Failed to disable raw mode");
-        //execute!(stdout, LeaveAlternateScreen).expect("Failed to leave alternate screen");
+        let mut stdout = io::stdout();
+        self.output.clear_screen().expect("Failed to clear screen");
+        terminal::disable_raw_mode().expect("Failed to disable raw mode");
+        execute!(stdout, LeaveAlternateScreen).expect("Failed to leave alternate screen");
     }
 }

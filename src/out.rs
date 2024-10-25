@@ -54,12 +54,6 @@ impl Output {
     }
 
     pub fn render_screen(&mut self, rows: &EditorRows, mode: &Mode) -> io::Result<()> {
-<<<<<<< HEAD
-<<<<<<< HEAD
-        let c_x = (self.c_ctrl.rx - self.c_ctrl.x_offset) as u16;
-        let c_y = (self.c_ctrl.cy - self.c_ctrl.y_offset) as u16;
-
-=======
         queue!(self.out, cursor::Hide, cursor::MoveTo(0, 0))?;
 
         self.c_ctrl.scroll(rows);
@@ -69,28 +63,9 @@ impl Output {
         self.render_lines(rows)?;
         self.render_bar(rows)?;
 
->>>>>>> 30d1433 (Improve cursor movement)
-=======
->>>>>>> cd0c0d8 (Fix cursor position bug)
         match mode {
             Mode::Command => self.render_command()?,
             _ => {
-<<<<<<< HEAD
-<<<<<<< HEAD
-                self.c_ctrl.scroll(rows);
-
-=======
->>>>>>> cd0c0d8 (Fix cursor position bug)
-                queue!(self.out, cursor::Hide, cursor::MoveTo(0, 0))?;
-
-                self.c_ctrl.scroll(rows);
-                let c_x = (self.c_ctrl.rx - self.c_ctrl.x_offset) as u16;
-                let c_y = (self.c_ctrl.cy - self.c_ctrl.y_offset) as u16;
-
-                self.render_lines(rows)?;
-                self.render_bar(rows)?;
-=======
->>>>>>> 30d1433 (Improve cursor movement)
                 self.render_message()?;
                 queue!(self.out, cursor::Show, cursor::MoveTo(c_x, c_y))?;
             }
