@@ -196,17 +196,40 @@ impl Output {
 
     pub fn delete_line(&mut self, e_rows: &mut EditorRows) {
         let n_rows = e_rows.num_rows().saturating_sub(1);
-        if self.c_ctrl.cy == 0 {
-            if n_rows == 0 {
-                e_rows.clear_erow(self.c_ctrl.cy);
-            } else {
-                e_rows.delete_erow(0);
-            }
+        if self.c_ctrl.cy == 0 && n_rows == 0 {
+            e_rows.clear_erow(self.c_ctrl.cy);
             self.c_ctrl.cx = 0;
         } else {
             e_rows.delete_erow(self.c_ctrl.cy);
             if self.c_ctrl.cy > n_rows {
                 self.c_ctrl.cy -= 1;
+            }
+        }
+    }
+
+    pub fn delete_char(&mut self, e_rows: &mut EditorRows, mode: &Mode) {
+        if e_rows.get_raw(self.c_ctrl.cy).len() == 0 {
+            return;
+        }
+
+        let erow_mut = e_rows.get_erow_mut(self.c_ctrl.cy);
+        match mode {
+            Mode::Normal => erow_mut.delete_char(self.c_ctrl.cx),
+            Mode::Insert => {
+                if self.c_ctrl.cx != 0 {
+                    let x = self.c_ctrl.cx.saturating_sub(1);
+                    erow_mut.delete_char(x);
+                    self.c_ctrl.mv(Direction::Left, &e_rows, &mode);
+                }
+            }
+            Mode::Command => {
+                if let Some(cmd) = &mut self.cmd {
+                    if self.c_ctrl.cmdx != 1 {
+                        let x = self.c_ctrl.cmdx.saturating_sub(2);
+                        cmd.remove(x);
+                        self.c_ctrl.mv(Direction::Left, &e_rows, &mode);
+                    }
+                }
             }
         }
     }
@@ -241,6 +264,7 @@ impl Output {
 
     pub fn push_cmd(&mut self, c: char) {
         self.cmd.get_or_insert_with(String::new).push(c);
+        self.c_ctrl.cmdx += 1;
     }
 
     pub fn get_cmd(&self) -> Option<Vec<&str>> {

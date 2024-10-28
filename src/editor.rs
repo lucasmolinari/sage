@@ -49,6 +49,11 @@ impl ERow {
         self.render();
     }
 
+    pub fn delete_char(&mut self, i: usize) {
+        self.raw.remove(i);
+        self.render();
+    }
+
     fn render(&mut self) {
         let cap = self
             .raw
@@ -340,6 +345,7 @@ impl Editor {
                     self.last_code = Some(code)
                 }
             }
+            KeyCode::Char('x') => self.output.delete_char(&mut self.e_rows, &self.mode),
             _ => {}
         }
         Ok(())
@@ -350,6 +356,7 @@ impl Editor {
             KeyCode::Esc => self.change_mode(Mode::Normal)?,
             KeyCode::Char(c) => self.output.insert(&mut self.e_rows, c),
             KeyCode::Tab => self.output.insert(&mut self.e_rows, '\t'),
+            KeyCode::Backspace => self.output.delete_char(&mut self.e_rows, &self.mode),
             _ => {}
         }
         Ok(())
@@ -358,16 +365,13 @@ impl Editor {
     fn handle_command_press(&mut self, code: KeyCode) -> io::Result<bool> {
         match code {
             KeyCode::Esc => self.change_mode(Mode::Normal)?,
-            KeyCode::Char(c) => {
-                self.output.push_cmd(c);
-                self.output
-                    .move_cursor(Direction::Right, &self.e_rows, &self.mode);
-            }
+            KeyCode::Char(c) => self.output.push_cmd(c),
             KeyCode::Enter => {
                 let q = self.exec_cmd()?;
                 self.change_mode(Mode::Normal)?;
                 return Ok(q);
             }
+            KeyCode::Backspace => self.output.delete_char(&mut self.e_rows, &self.mode),
             _ => {}
         }
         Ok(false)
