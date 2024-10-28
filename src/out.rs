@@ -188,9 +188,23 @@ impl Output {
             Direction::Down => self.c_ctrl.cy + 1,
             _ => unimplemented!(),
         };
-        e_rows.insert_erow(y);
+        e_rows.insert_erow(y, String::new());
+
         self.c_ctrl.cy = y;
         self.c_ctrl.cx = 0;
+        self.dirty += 1;
+    }
+
+    pub fn break_line(&mut self, e_rows: &mut EditorRows) {
+        let curr_erow = e_rows.get_erow_mut(self.c_ctrl.cy);
+        let new_erow_cont = curr_erow.raw[self.c_ctrl.cx..].into();
+
+        curr_erow.raw.truncate(self.c_ctrl.cx);
+        curr_erow.render();
+        e_rows.insert_erow(self.c_ctrl.cy + 1, new_erow_cont);
+
+        self.c_ctrl.cx = 0;
+        self.c_ctrl.cy += 1;
         self.dirty += 1;
     }
 
@@ -214,19 +228,29 @@ impl Output {
 
         let erow_mut = e_rows.get_erow_mut(self.c_ctrl.cy);
         match mode {
-            Mode::Normal => erow_mut.delete_char(self.c_ctrl.cx),
+            Mode::Normal => {
+                erow_mut.delete_char(self.c_ctrl.cx);
+                self.dirty += 1;
+            }
             Mode::Insert => {
-                if self.c_ctrl.cx != 0 {
-                    let x = self.c_ctrl.cx.saturating_sub(1);
-                    erow_mut.delete_char(x);
+                if self.c_ctrl.cx > 0 {
+                    erow_mut.delete_char(self.c_ctrl.cx - 1);
                     self.c_ctrl.mv(Direction::Left, &e_rows, &mode);
+                } else {
+                    if self.c_ctrl.cy > 0 {
+                        let prev_erow_content = e_rows.get_raw(self.c_ctrl.cy - 1);
+                        self.c_ctrl.cx = prev_erow_content.len();
+
+                        e_rows.join_adj_erows(self.c_ctrl.cy);
+                        self.c_ctrl.cy -= 1;
+                    }
                 }
+                self.dirty += 1;
             }
             Mode::Command => {
                 if let Some(cmd) = &mut self.cmd {
-                    if self.c_ctrl.cmdx != 1 {
-                        let x = self.c_ctrl.cmdx.saturating_sub(2);
-                        cmd.remove(x);
+                    if self.c_ctrl.cmdx > 1 {
+                        cmd.remove(self.c_ctrl.cmdx - 2);
                         self.c_ctrl.mv(Direction::Left, &e_rows, &mode);
                     }
                 }

@@ -44,6 +44,11 @@ impl ERow {
         self.render();
     }
 
+    pub fn push_str(&mut self, str: &str) {
+        self.raw.push_str(str);
+        self.render();
+    }
+
     pub fn clear(&mut self) {
         self.raw.clear();
         self.render();
@@ -54,7 +59,7 @@ impl ERow {
         self.render();
     }
 
-    fn render(&mut self) {
+    pub fn render(&mut self) {
         let cap = self
             .raw
             .chars()
@@ -122,8 +127,8 @@ impl EditorRows {
         self.filename = Some(name.into());
     }
 
-    pub fn insert_erow(&mut self, i: usize) {
-        self.rows.insert(i, ERow::default());
+    pub fn insert_erow(&mut self, i: usize, raw: String) {
+        self.rows.insert(i, ERow::new(raw));
     }
 
     pub fn delete_erow(&mut self, i: usize) {
@@ -132,6 +137,12 @@ impl EditorRows {
 
     pub fn clear_erow(&mut self, i: usize) {
         self.rows.get_mut(i).map(|r| r.clear());
+    }
+
+    pub fn join_adj_erows(&mut self, i: usize) {
+        let curr_erow = self.rows.remove(i);
+        let prev_erow = self.get_erow_mut(i - 1);
+        prev_erow.push_str(&curr_erow.raw);
     }
 
     pub fn get_raw(&self, i: usize) -> &str {
@@ -356,6 +367,7 @@ impl Editor {
             KeyCode::Esc => self.change_mode(Mode::Normal)?,
             KeyCode::Char(c) => self.output.insert(&mut self.e_rows, c),
             KeyCode::Tab => self.output.insert(&mut self.e_rows, '\t'),
+            KeyCode::Enter => self.output.break_line(&mut self.e_rows),
             KeyCode::Backspace => self.output.delete_char(&mut self.e_rows, &self.mode),
             _ => {}
         }
