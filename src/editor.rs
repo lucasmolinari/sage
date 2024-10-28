@@ -265,57 +265,83 @@ impl Editor {
 
     fn handle_normal_press(&mut self, code: KeyCode) -> io::Result<()> {
         match code {
-            KeyCode::Char(':') => self.change_mode(Mode::Command)?,
+            KeyCode::Char(':') => {
+                self.change_mode(Mode::Command)?;
+                self.last_code = Some(code);
+            }
             KeyCode::Up | KeyCode::Char('k') => {
                 self.output
-                    .move_cursor(Direction::Up, &self.e_rows, &self.mode)
+                    .move_cursor(Direction::Up, &self.e_rows, &self.mode);
+                self.last_code = Some(code);
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 self.output
-                    .move_cursor(Direction::Down, &self.e_rows, &self.mode)
+                    .move_cursor(Direction::Down, &self.e_rows, &self.mode);
+                self.last_code = Some(code);
             }
             KeyCode::Left | KeyCode::Char('h') => {
                 self.output
-                    .move_cursor(Direction::Left, &self.e_rows, &self.mode)
+                    .move_cursor(Direction::Left, &self.e_rows, &self.mode);
+                self.last_code = Some(code);
             }
             KeyCode::Right | KeyCode::Char('l') => {
                 self.output
-                    .move_cursor(Direction::Right, &self.e_rows, &self.mode)
+                    .move_cursor(Direction::Right, &self.e_rows, &self.mode);
+
+                self.last_code = Some(code);
             }
-            KeyCode::Char('i') => self.change_mode(Mode::Insert)?,
+            KeyCode::Char('i') => {
+                self.change_mode(Mode::Insert)?;
+                self.last_code = Some(code);
+            }
             KeyCode::Char('a') => {
                 self.change_mode(Mode::Insert)?;
                 self.output
                     .move_cursor(Direction::Right, &self.e_rows, &Mode::Insert);
+                self.last_code = Some(code);
             }
             KeyCode::Char('o') => {
                 self.output.new_line(Direction::Down, &mut self.e_rows);
                 self.change_mode(Mode::Insert)?;
+                self.last_code = Some(code);
             }
             KeyCode::Char('O') => {
                 self.output.new_line(Direction::Up, &mut self.e_rows);
                 self.change_mode(Mode::Insert)?;
+                self.last_code = Some(code);
             }
-            KeyCode::Char('G') => self.output.goto_y(self.e_rows.num_rows() - 1),
+            KeyCode::Char('G') => {
+                self.output.goto_y(self.e_rows.num_rows() - 1);
+                self.last_code = Some(code);
+            }
             KeyCode::Char('g') => {
-                if let Some(e) = self.last_code {
-                    match e {
-                        KeyCode::Char('g') => self.output.goto_y(0),
-                        _ => {}
+                if let Some(c) = self.last_code {
+                    match c {
+                        KeyCode::Char('g') => {
+                            self.output.goto_y(0);
+                            self.last_code = None;
+                        }
+                        _ => self.last_code = Some(code),
                     }
+                } else {
+                    self.last_code = Some(code)
                 }
             }
             KeyCode::Char('d') => {
-                if let Some(e) = self.last_code {
-                    match e {
-                        KeyCode::Char('d') => self.output.delete_line(&mut self.e_rows),
-                        _ => {}
+                if let Some(c) = self.last_code {
+                    match c {
+                        KeyCode::Char('d') => {
+                            self.output.delete_line(&mut self.e_rows);
+                            self.last_code = None;
+                        }
+                        _ => self.last_code = Some(code),
                     }
+                } else {
+                    self.last_code = Some(code)
                 }
             }
             _ => {}
         }
-        self.last_code = Some(code);
         Ok(())
     }
 
