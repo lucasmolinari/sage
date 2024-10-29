@@ -113,13 +113,10 @@ impl Output {
                 .unwrap_or(0),
         );
         self.out.write(info_f.as_bytes())?;
-
+        let row = rows.get_raw(self.c_ctrl.cy).len().saturating_sub(1);
         let info_c = format!(
-            "{}:{}/{} {}",
-            c_y + 1,
-            c_x + 1,
-            self.c_ctrl.rx + 1,
-            self.c_ctrl.cmdx + 1,
+            "{}:{}/{} ({}) {}",
+            c_y, c_x, self.c_ctrl.rx, row, self.c_ctrl.cmdx,
         );
         let info_c_pos = self.size.0 - info_c.len();
         for i in info_f.len()..self.size.0 {
@@ -349,7 +346,7 @@ impl CursorController {
         let row = e_rows.get_raw(self.cy);
         let row_len = match mode {
             Mode::Normal => row.len().saturating_sub(1),
-            _ => e_rows.get_raw(self.cy).len(),
+            _ => row.len(),
         };
         match mode {
             Mode::Command => match dir {
@@ -379,7 +376,13 @@ impl CursorController {
                         }
                     }
                 };
-                self.cx = cmp::min(self.cx, row_len);
+
+                let new_row = e_rows.get_raw(self.cy);
+                let new_row_len = match mode {
+                    Mode::Normal => new_row.len().saturating_sub(1),
+                    _ => new_row.len(),
+                };
+                self.cx = cmp::min(self.cx, new_row_len);
             }
         }
     }
