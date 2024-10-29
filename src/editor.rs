@@ -357,6 +357,7 @@ impl Editor {
                 }
             }
             KeyCode::Char('x') => self.output.delete_char(&mut self.e_rows, &self.mode),
+            KeyCode::Char('w') => self.output.next_word(&self.e_rows),
             _ => {}
         }
         Ok(())

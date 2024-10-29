@@ -119,7 +119,7 @@ impl Output {
             c_y + 1,
             c_x + 1,
             self.c_ctrl.rx + 1,
-            self.c_ctrl.cmdx
+            self.c_ctrl.cmdx + 1,
         );
         let info_c_pos = self.size.0 - info_c.len();
         for i in info_f.len()..self.size.0 {
@@ -260,6 +260,28 @@ impl Output {
 
     pub fn goto_y(&mut self, y: usize) {
         self.c_ctrl.cy = y;
+    }
+
+    pub fn next_word(&mut self, e_rows: &EditorRows) {
+        let curr_erow = &e_rows.get_raw(self.c_ctrl.cy);
+        let mut pos = self.c_ctrl.cx;
+        let erow_len = curr_erow.len() - 1;
+
+        if !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
+            while pos < erow_len && !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
+                pos += 1;
+            }
+        } else {
+            while pos < erow_len && curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
+                pos += 1;
+            }
+        }
+
+        while pos < erow_len && curr_erow.as_bytes()[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+
+        self.c_ctrl.cx = cmp::min(pos, erow_len);
     }
 
     pub fn move_cursor(&mut self, dir: Direction, e_rows: &EditorRows, mode: &Mode) {
