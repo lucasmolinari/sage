@@ -227,6 +227,9 @@ impl Output {
         match mode {
             Mode::Normal => {
                 erow_mut.delete_char(self.c_ctrl.cx);
+                if self.c_ctrl.cx > erow_mut.raw.len().saturating_sub(1) {
+                    self.c_ctrl.cx = erow_mut.raw.len().saturating_sub(1)
+                }
                 self.dirty += 1;
             }
             Mode::Insert => {
@@ -259,26 +262,119 @@ impl Output {
         self.c_ctrl.cy = y;
     }
 
-    pub fn next_word(&mut self, e_rows: &EditorRows) {
-        let curr_erow = &e_rows.get_raw(self.c_ctrl.cy);
-        let mut pos = self.c_ctrl.cx;
-        let erow_len = curr_erow.len() - 1;
+    pub fn goto_end_line(&mut self, e_rows: &EditorRows) {
+        self.c_ctrl.cx = e_rows.get_raw(self.c_ctrl.cy).len();
+    }
 
-        if !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
-            while pos < erow_len && !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
+    pub fn goto_start_line(&mut self, e_rows: &EditorRows) {
+        let curr_erow = e_rows.get_raw(self.c_ctrl.cy);
+        let erow_len = curr_erow.len().saturating_sub(1);
+        let mut pos = 0;
+        if erow_len > 0 {
+            while curr_erow.as_bytes()[pos].is_ascii_whitespace() {
                 pos += 1;
             }
+        }
+        self.c_ctrl.cx = cmp::min(pos, curr_erow.len().saturating_sub(1));
+    }
+
+    pub fn next_word(&mut self, e_rows: &EditorRows, to_end: bool) {
+        if e_rows.get_raw(self.c_ctrl.cy).len().saturating_sub(1) == self.c_ctrl.cx {
+            self.c_ctrl.mv(Direction::Down, e_rows, &Mode::Normal);
+            self.c_ctrl.cx = 0;
         } else {
-            while pos < erow_len && curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
+            let curr_erow = e_rows.get_raw(self.c_ctrl.cy);
+            let erow_len = curr_erow.len().saturating_sub(1);
+
+            if erow_len == 0 {
+                return;
+            }
+
+            let mut pos = self.c_ctrl.cx;
+            if !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
+                while pos < erow_len && !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
+                    pos += 1;
+                }
+            } else {
+                while pos < erow_len
+                    && (curr_erow.as_bytes()[pos].is_ascii_alphabetic()
+                        || curr_erow.as_bytes()[pos].is_ascii_alphanumeric())
+                {
+                    pos += 1;
+                }
+            }
+
+            while pos < erow_len && curr_erow.as_bytes()[pos].is_ascii_whitespace() {
                 pos += 1;
             }
-        }
 
-        while pos < erow_len && curr_erow.as_bytes()[pos].is_ascii_whitespace() {
-            pos += 1;
-        }
+            if to_end {
+                if !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
+                    while pos < erow_len && !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
+                        pos += 1;
+                    }
+                } else {
+                    while pos < erow_len
+                        && (curr_erow.as_bytes()[pos].is_ascii_alphabetic()
+                            || curr_erow.as_bytes()[pos].is_ascii_alphanumeric())
+                    {
+                        pos += 1;
+                    }
+                }
+                while pos > 0 && curr_erow.as_bytes()[pos].is_ascii_whitespace() {
+                    pos -= 1;
+                }
+            }
 
-        self.c_ctrl.cx = cmp::min(pos, erow_len);
+            self.c_ctrl.cx = cmp::min(pos, erow_len);
+        }
+    }
+
+    pub fn prev_word(&mut self, e_rows: &EditorRows, to_start: bool) {
+        if self.c_ctrl.cx == 0 && self.c_ctrl.cy != 0 {
+            self.c_ctrl.mv(Direction::Up, e_rows, &Mode::Normal);
+            self.c_ctrl.cx = e_rows.get_raw(self.c_ctrl.cy).len().saturating_sub(1);
+        } else {
+            let curr_erow = e_rows.get_raw(self.c_ctrl.cy);
+
+            let mut pos = self.c_ctrl.cx;
+            if !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
+                while pos > 0 && !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
+                    pos -= 1;
+                }
+            } else {
+                while pos > 0
+                    && (curr_erow.as_bytes()[pos].is_ascii_alphabetic()
+                        || curr_erow.as_bytes()[pos].is_ascii_alphanumeric())
+                {
+                    pos -= 1;
+                }
+            }
+
+            while pos > 0 && curr_erow.as_bytes()[pos].is_ascii_whitespace() {
+                pos -= 1;
+            }
+
+            if to_start {
+                if !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
+                    while pos > 0 && !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
+                        pos -= 1;
+                    }
+                } else {
+                    while pos > 0
+                        && (curr_erow.as_bytes()[pos].is_ascii_alphabetic()
+                            || curr_erow.as_bytes()[pos].is_ascii_alphanumeric())
+                    {
+                        pos -= 1;
+                    }
+                }
+                while pos > 0 && curr_erow.as_bytes()[pos].is_ascii_whitespace() {
+                    pos += 1;
+                }
+            }
+
+            self.c_ctrl.cx = cmp::min(pos, curr_erow.len().saturating_sub(1));
+        }
     }
 
     pub fn move_cursor(&mut self, dir: Direction, e_rows: &EditorRows, mode: &Mode) {

@@ -310,10 +310,20 @@ impl Editor {
                 self.change_mode(Mode::Insert)?;
                 self.last_code = Some(code);
             }
+            KeyCode::Char('I') => {
+                self.change_mode(Mode::Insert)?;
+                self.output.goto_start_line(&self.e_rows);
+                self.last_code = Some(code);
+            }
             KeyCode::Char('a') => {
                 self.change_mode(Mode::Insert)?;
                 self.output
                     .move_cursor(Direction::Right, &self.e_rows, &Mode::Insert);
+                self.last_code = Some(code);
+            }
+            KeyCode::Char('A') => {
+                self.change_mode(Mode::Insert)?;
+                self.output.goto_end_line(&self.e_rows);
                 self.last_code = Some(code);
             }
             KeyCode::Char('o') => {
@@ -357,7 +367,25 @@ impl Editor {
                 }
             }
             KeyCode::Char('x') => self.output.delete_char(&mut self.e_rows, &self.mode),
-            KeyCode::Char('w') => self.output.next_word(&self.e_rows),
+            KeyCode::Char('w') => self.output.next_word(&self.e_rows, false),
+            KeyCode::Char('b') => self.output.prev_word(&self.e_rows, true),
+            KeyCode::Char('e') => {
+                if let Some(c) = self.last_code {
+                    match c {
+                        KeyCode::Char('g') => {
+                            self.output.prev_word(&self.e_rows, false);
+                            self.last_code = None;
+                        }
+                        _ => {
+                            self.last_code = Some(code);
+                            self.output.next_word(&self.e_rows, true);
+                        }
+                    }
+                } else {
+                    self.output.next_word(&self.e_rows, true)
+                }
+            }
+            KeyCode::Char('_') => self.output.goto_start_line(&self.e_rows),
             _ => {}
         }
         Ok(())
