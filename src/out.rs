@@ -80,7 +80,23 @@ impl Output {
             queue!(self.out, Clear(ClearType::UntilNewLine))?;
             let i_offset = i + self.c_ctrl.y_offset;
             if i_offset >= rows.num_rows() {
-                self.out.write(b"~")?;
+                if rows.num_rows() == 1 && i == self.size.1 / 3 && rows.get_raw(0).is_empty() {
+                    let mut msg = "-- Sage Text Editor --".to_string();
+                    msg.truncate(self.size.0);
+
+                    let mut padding = (self.size.0 - msg.len()) / 2;
+                    if padding != 0 {
+                        self.out.write(b"~")?;
+                        padding -= 1
+                    }
+
+                    for _ in 0..padding {
+                        self.out.write(b" ")?;
+                    }
+                    self.out.write(msg.as_bytes())?;
+                } else {
+                    self.out.write(b"~")?;
+                }
             } else {
                 let row = rows.get_render(i_offset);
                 let len = cmp::min(row.len().saturating_sub(self.c_ctrl.x_offset), self.size.0);
@@ -219,7 +235,7 @@ impl Output {
     }
 
     pub fn delete_char(&mut self, e_rows: &mut EditorRows, mode: &Mode) {
-        if e_rows.get_raw(self.c_ctrl.cy).len() == 0 {
+        if e_rows.get_raw(self.c_ctrl.cy).len() == 0 && mode != &Mode::Command {
             return;
         }
 
@@ -263,7 +279,7 @@ impl Output {
     }
 
     pub fn goto_end_line(&mut self, e_rows: &EditorRows) {
-        self.c_ctrl.cx = e_rows.get_raw(self.c_ctrl.cy).len();
+        self.c_ctrl.cx = e_rows.get_raw(self.c_ctrl.cy).len().saturating_sub(1);
     }
 
     pub fn goto_start_line(&mut self, e_rows: &EditorRows) {
@@ -291,16 +307,18 @@ impl Output {
             }
 
             let mut pos = self.c_ctrl.cx;
-            if !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
-                while pos < erow_len && !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
-                    pos += 1;
-                }
-            } else {
-                while pos < erow_len
-                    && (curr_erow.as_bytes()[pos].is_ascii_alphabetic()
-                        || curr_erow.as_bytes()[pos].is_ascii_alphanumeric())
-                {
-                    pos += 1;
+            if !to_end {
+                if !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
+                    while pos < erow_len && !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
+                        pos += 1;
+                    }
+                } else {
+                    while pos < erow_len
+                        && (curr_erow.as_bytes()[pos].is_ascii_alphabetic()
+                            || curr_erow.as_bytes()[pos].is_ascii_alphanumeric())
+                    {
+                        pos += 1;
+                    }
                 }
             }
 
@@ -338,8 +356,13 @@ impl Output {
             let curr_erow = e_rows.get_raw(self.c_ctrl.cy);
 
             let mut pos = self.c_ctrl.cx;
-            if !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
-                while pos > 0 && !curr_erow.as_bytes()[pos].is_ascii_alphabetic() {
+            if !curr_erow.as_bytes()[pos].is_ascii_alphabetic()
+                && !curr_erow.as_bytes()[pos].is_ascii_alphanumeric()
+            {
+                while pos > 0
+                    && !curr_erow.as_bytes()[pos].is_ascii_alphabetic()
+                    && !curr_erow.as_bytes()[pos].is_ascii_alphanumeric()
+                {
                     pos -= 1;
                 }
             } else {

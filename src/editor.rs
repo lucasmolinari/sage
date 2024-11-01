@@ -201,12 +201,6 @@ impl Editor {
                     Event::Key(KeyEvent {
                         modifiers: KeyModifiers::CONTROL,
                         kind: KeyEventKind::Press,
-                        code: KeyCode::Char('q'),
-                        ..
-                    }) => break,
-                    Event::Key(KeyEvent {
-                        modifiers: KeyModifiers::CONTROL,
-                        kind: KeyEventKind::Press,
                         code: KeyCode::Char('s'),
                         ..
                     }) => {
@@ -366,9 +360,18 @@ impl Editor {
                     self.last_code = Some(code)
                 }
             }
-            KeyCode::Char('x') => self.output.delete_char(&mut self.e_rows, &self.mode),
-            KeyCode::Char('w') => self.output.next_word(&self.e_rows, false),
-            KeyCode::Char('b') => self.output.prev_word(&self.e_rows, true),
+            KeyCode::Char('x') => {
+                self.output.delete_char(&mut self.e_rows, &self.mode);
+                self.last_code = Some(code);
+            }
+            KeyCode::Char('w') => {
+                self.output.next_word(&self.e_rows, false);
+                self.last_code = Some(code);
+            }
+            KeyCode::Char('b') => {
+                self.output.prev_word(&self.e_rows, true);
+                self.last_code = Some(code);
+            }
             KeyCode::Char('e') => {
                 if let Some(c) = self.last_code {
                     match c {
@@ -385,7 +388,14 @@ impl Editor {
                     self.output.next_word(&self.e_rows, true)
                 }
             }
-            KeyCode::Char('_') => self.output.goto_start_line(&self.e_rows),
+            KeyCode::Char('_') => {
+                self.output.goto_start_line(&self.e_rows);
+                self.last_code = Some(code);
+            }
+            KeyCode::Char('$') => {
+                self.output.goto_end_line(&self.e_rows);
+                self.last_code = Some(code);
+            }
             _ => {}
         }
         Ok(())
@@ -485,7 +495,7 @@ impl Editor {
                 }
                 _ => {
                     self.output.set_cmd_msg(
-                        &format!("Unknown command \"{}\"", it.concat()),
+                        &format!("Unknown command \'{}\'", it.join(" ")),
                         MessageLevel::Danger,
                     );
                     false
