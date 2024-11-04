@@ -493,6 +493,24 @@ impl Editor {
                     };
                     false
                 }
+                ["wq", name] => {
+                    self.e_rows.set_filename(name);
+                    match self.save() {
+                        Ok(len) => {
+                            self.output.set_cmd_msg(
+                                &format!("{} bytes written to disk", len),
+                                MessageLevel::Normal,
+                            );
+                            self.output.dirty = 0;
+                        }
+                        Err(e) => {
+                            self.output
+                                .set_cmd_msg(&e.to_string(), MessageLevel::Danger);
+                            return Ok(false);
+                        }
+                    }
+                    true
+                }
                 _ => {
                     self.output.set_cmd_msg(
                         &format!("Unknown command \'{}\'", it.join(" ")),
