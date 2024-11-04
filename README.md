@@ -2,6 +2,9 @@
 ![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)
 
 Sage is a small console-based text editor inspired by Vim.
+
+<img src="https://github.com/user-attachments/assets/c6dbcc26-4ee6-421c-a2a8-3a00555b19ef" width="50%" height="150"/>
+
 ### Installation and Usage
 Clone the repository:
 ```
