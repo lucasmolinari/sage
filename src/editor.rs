@@ -132,7 +132,9 @@ impl EditorRows {
     }
 
     pub fn delete_erow(&mut self, i: usize) {
-        self.rows.remove(i);
+        if i < self.rows.len() {
+            self.rows.remove(i);
+        }
     }
 
     pub fn clear_erow(&mut self, i: usize) {
@@ -317,7 +319,7 @@ impl Editor {
             }
             KeyCode::Char('A') => {
                 self.change_mode(Mode::Insert)?;
-                self.output.goto_end_line(&self.e_rows);
+                self.output.goto_end_line(&self.e_rows, &self.mode);
                 self.last_code = Some(code);
             }
             KeyCode::Char('o') => {
@@ -393,7 +395,7 @@ impl Editor {
                 self.last_code = Some(code);
             }
             KeyCode::Char('$') => {
-                self.output.goto_end_line(&self.e_rows);
+                self.output.goto_end_line(&self.e_rows, &self.mode);
                 self.last_code = Some(code);
             }
             _ => {}

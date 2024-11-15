@@ -208,6 +208,17 @@ impl Output {
         self.dirty += 1;
     }
 
+    pub fn delete_line(&mut self, e_rows: &mut EditorRows) {
+        let n_rows = e_rows.num_rows().saturating_sub(1);
+        if self.c_ctrl.cy == 0 && n_rows == 0 {
+            e_rows.clear_erow(self.c_ctrl.cy);
+        } else {
+            e_rows.delete_erow(self.c_ctrl.cy);
+            self.c_ctrl.cy = self.c_ctrl.cy.saturating_sub(1);
+        }
+        self.c_ctrl.cx = 0;
+    }
+
     pub fn break_line(&mut self, e_rows: &mut EditorRows) {
         let curr_erow = e_rows.get_erow_mut(self.c_ctrl.cy);
         let new_erow_cont = curr_erow.raw[self.c_ctrl.cx..].into();
@@ -219,19 +230,6 @@ impl Output {
         self.c_ctrl.cx = 0;
         self.c_ctrl.cy += 1;
         self.dirty += 1;
-    }
-
-    pub fn delete_line(&mut self, e_rows: &mut EditorRows) {
-        let n_rows = e_rows.num_rows().saturating_sub(1);
-        if self.c_ctrl.cy == 0 && n_rows == 0 {
-            e_rows.clear_erow(self.c_ctrl.cy);
-            self.c_ctrl.cx = 0;
-        } else {
-            e_rows.delete_erow(self.c_ctrl.cy);
-            if self.c_ctrl.cy > n_rows {
-                self.c_ctrl.cy -= 1;
-            }
-        }
     }
 
     pub fn delete_char(&mut self, e_rows: &mut EditorRows, mode: &Mode) {
@@ -278,8 +276,12 @@ impl Output {
         self.c_ctrl.cy = y;
     }
 
-    pub fn goto_end_line(&mut self, e_rows: &EditorRows) {
-        self.c_ctrl.cx = e_rows.get_raw(self.c_ctrl.cy).len().saturating_sub(1);
+    pub fn goto_end_line(&mut self, e_rows: &EditorRows, mode: &Mode) {
+        let sub = match mode {
+            Mode::Insert => 0,
+            _=> 1,
+        };
+        self.c_ctrl.cx = e_rows.get_raw(self.c_ctrl.cy).len().saturating_sub(sub);
     }
 
     pub fn goto_start_line(&mut self, e_rows: &EditorRows) {
